@@ -629,7 +629,7 @@ const HARI_LIST = ['Senin','Selasa','Rabu','Kamis','Jumat','Sabtu','Minggu'];
 const WAKTU_LIST = ['Sarapan','Makan Siang','Camilan Sore','Makan Malam','Camilan Malam'];
 
 let DATA = { jadwal: [], stok: [], meal: [], progress: [], latihan: [] };
-let scriptUrl = localStorage.getItem('planner_script_url') || '';
+let scriptUrl = localStorage.getItem('planner_script_url') || 'https://script.google.com/macros/s/AKfycbyu_GNLHwTb3KRjjyxFoKW2D_wqonQzzBHo3SgH7ZX6XhaJeaQPlqXxTQwBMplEMbJf/exec';
 let editingMealCell = null; // {hari, waktu, existing}
 
 const DEFAULT_SCHEDULE = [
