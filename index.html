@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+<!-- v2026-08-24-fix: jam sort by time, edit modal, normalizeJam anti-timezone-shift, push-only sync (no pull from Sheets) -->
 <html lang="id">
 <head>
 <meta charset="UTF-8">
@@ -376,13 +377,11 @@
       <h1>Kitchen & Schedule</h1>
     </div>
     <div class="sync-status">
-      <span><span class="dot" id="connDot"></span><span id="connText">Belum tersambung</span></span>
       <button onclick="toggleNotif()" id="notifBtn">🔕 Aktifkan notifikasi</button>
       <button onclick="exportBackup()">⬇️ Backup</button>
       <button onclick="document.getElementById('restoreFile').click()">⬆️ Restore</button>
       <input type="file" id="restoreFile" accept="application/json" style="display:none;" onchange="importBackup(event)">
-      <button onclick="openSettings()">Sambungkan</button>
-      <button onclick="syncNow()" id="syncBtn" style="display:none;">Sinkronkan</button>
+      <button onclick="openSettings()" title="Setelan Google Sheets">⚙️</button>
     </div>
   </header>
 
@@ -610,9 +609,9 @@
 <!-- Modal for settings -->
 <div class="modal-bg" id="settingsModal">
   <div class="modal" style="max-width:460px;">
-    <h3>Sambungkan ke Google Sheets</h3>
+    <h3>Simpan otomatis ke Google Sheets</h3>
     <div class="settings-box" style="border:none;padding:0;">
-      <p>Deploy skrip Apps Script (file <b>Code.gs</b> yang disertakan) sebagai Web App, lalu tempel URL-nya di sini. Data akan disimpan di Google Sheets kamu dan tetap tersimpan di browser ini sebagai cadangan.</p>
+      <p>Deploy skrip Apps Script (file <b>Code.gs</b> yang disertakan) sebagai Web App, lalu tempel URL-nya di sini. Setiap kali kamu tambah/ubah/hapus data, otomatis terkirim ke Google Sheets kamu. Data utama tetap tersimpan di HP ini — Sheets cuma jadi cadangan, jadi datamu tidak akan pernah ketimpa isi dari Sheets.</p>
       <div class="field">
         <label>URL Web App</label>
         <input type="text" id="scriptUrl" placeholder="https://script.google.com/macros/s/.../exec">
@@ -620,7 +619,7 @@
     </div>
     <div class="modal-actions">
       <button class="btn ghost" onclick="closeSettings()">Tutup</button>
-      <button class="btn" onclick="saveScriptUrl()">Simpan & Sinkron</button>
+      <button class="btn" onclick="saveScriptUrl()">Simpan</button>
     </div>
   </div>
 </div>
@@ -1027,74 +1026,23 @@ async function callAPI(action, payload={}){
     return await res.json();
   }catch(err){
     console.error('Sync error', err);
-    setConn(false, 'Gagal sinkron');
     return null;
   }
 }
 
-function setConn(on, text){
-  document.getElementById('connDot').classList.toggle('on', on);
-  document.getElementById('connText').textContent = text;
-  document.getElementById('syncBtn').style.display = on ? 'inline-block' : 'none';
+// Kirim SEMUA data lokal ke Google Sheets (satu arah: HP -> Sheets).
+// Tidak pernah membaca/menimpa data lokal dari Sheets, jadi jam/data
+// yang sudah benar di HP tidak akan pernah berubah gara-gara sync.
+async function pushAllToSheet(){
+  if(!scriptUrl) return;
+  for(const item of DATA.jadwal){ await callAPI('add', {sheet:'Jadwal', item}); }
+  for(const item of DATA.stok){ await callAPI('add', {sheet:'Stok', item}); }
+  for(const item of DATA.meal){ await callAPI('add', {sheet:'MealPlan', item}); }
+  for(const item of DATA.progress){ await callAPI('add', {sheet:'Progress', item}); }
+  for(const item of DATA.latihan){ await callAPI('add', {sheet:'Latihan', item}); }
+  showToast('Data terkirim ke Google Sheets.');
 }
 
-async function syncNow(){
-  if(!scriptUrl) return openSettings();
-  setConn(false, 'Menyinkronkan...');
-  const res = await callAPI('getAll');
-
-  // Respons harus berupa object yang benar2 punya struktur data, bukan sekadar "bukan error"
-  const isValidResponse = res && typeof res === 'object' && !res.error
-    && (Array.isArray(res.jadwal) || Array.isArray(res.stok) || Array.isArray(res.meal) || Array.isArray(res.progress) || Array.isArray(res.latihan));
-
-  if(!isValidResponse){
-    setConn(false, 'Gagal sinkron — data lokal tidak diubah');
-    return;
-  }
-
-  const sheetTotal = totalItems({jadwal:res.jadwal, stok:res.stok, meal:res.meal, progress:res.progress, latihan:res.latihan});
-  const localTotal = totalItems(DATA);
-
-  if(sheetTotal===0 && localTotal>0){
-    // Sheet kosong tapi ada data lokal — dorong ke sheet, JANGAN pernah menimpa lokal jadi kosong
-    for(const item of DATA.jadwal){ await callAPI('add', {sheet:'Jadwal', item}); }
-    for(const item of DATA.stok){ await callAPI('add', {sheet:'Stok', item}); }
-    for(const item of DATA.meal){ await callAPI('add', {sheet:'MealPlan', item}); }
-    for(const item of DATA.progress){ await callAPI('add', {sheet:'Progress', item}); }
-    for(const item of DATA.latihan){ await callAPI('add', {sheet:'Latihan', item}); }
-    saveLocal();
-    renderAll();
-    setConn(true, 'Tersambung — data lokal dikirim ke sheet');
-    return;
-  }
-
-  if(sheetTotal===0 && localTotal===0){
-    saveLocal();
-    renderAll();
-    setConn(true, 'Tersambung');
-    return;
-  }
-
-  // Sheet punya data. Kalau data lokal jauh lebih banyak dari sheet, ini mencurigakan
-  // (bisa jadi sheet salah/parsial) — minta konfirmasi dulu sebelum menimpa lokal.
-  if(localTotal - sheetTotal >= 3 && localTotal > sheetTotal * 1.5){
-    const ok = await showConfirm(`Data di sheet (${sheetTotal} item) jauh lebih sedikit dari data di HP (${localTotal} item). Timpa data HP dengan data dari sheet? (Sebaiknya tekan Backup dulu kalau ragu)`);
-    if(!ok){
-      setConn(false, 'Sync dibatalkan — data lokal tidak diubah');
-      return;
-    }
-  }
-
-  DATA.jadwal = res.jadwal || [];
-  DATA.stok = res.stok || [];
-  DATA.meal = res.meal || [];
-  DATA.progress = res.progress || [];
-  DATA.latihan = res.latihan || [];
-  repairJadwalJam();
-  saveLocal();
-  renderAll();
-  setConn(true, 'Tersambung');
-}
 
 /* ---------- NOTIFIKASI ---------- */
 let notifEnabled = localStorage.getItem('planner_notif_enabled') === 'true';
@@ -1195,7 +1143,7 @@ async function saveScriptUrl(){
   scriptUrl = document.getElementById('scriptUrl').value.trim();
   localStorage.setItem('planner_script_url', scriptUrl);
   closeSettings();
-  if(scriptUrl) await syncNow();
+  if(scriptUrl) await pushAllToSheet();
 }
 
 function switchTab(name){
@@ -2058,8 +2006,6 @@ function renderProgress(){
 loadLocal();
 repairJadwalJam();
 renderAll();
-if(scriptUrl){ setConn(false,'Menyambungkan...'); syncNow(); }
-else { setConn(false,'Belum tersambung — data disimpan lokal'); }
 updateNotifBtn();
 if(notifEnabled && 'Notification' in window && Notification.permission==='granted'){
   startNotifChecker();
