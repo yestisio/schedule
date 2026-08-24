@@ -1325,9 +1325,9 @@ function onJadwalDrop(e){
   const hari = e.currentTarget.dataset.hari;
   if(!draggedJadwalId || draggedJadwalId===targetId) return;
   const dayItems = DATA.jadwal.filter(x=>x.hari===hari).sort((a,b)=>{
-    const ua=a.urutan, ub=b.urutan;
-    if(ua!=null && ub!=null) return ua-ub;
-    return (a.jam||'').localeCompare(b.jam||'');
+    const ja = a.jam||'99:99', jb = b.jam||'99:99';
+    if(ja !== jb) return ja.localeCompare(jb);
+    return (a.urutan??0)-(b.urutan??0);
   });
   const fromIdx = dayItems.findIndex(x=>x.id===draggedJadwalId);
   const toIdx = dayItems.findIndex(x=>x.id===targetId);
@@ -1734,17 +1734,21 @@ function renderDashboard(){
   // Jadwal hari ini
   const jadwalEl = document.getElementById('dash-jadwal');
   const jadwalToday = DATA.jadwal.filter(x=>x.hari===hari).sort((a,b)=>{
-    const ua=a.urutan, ub=b.urutan;
-    if(ua!=null && ub!=null) return ua-ub;
-    return (a.jam||'').localeCompare(b.jam||'');
+    const ja = a.jam||'99:99', jb = b.jam||'99:99';
+    if(ja !== jb) return ja.localeCompare(jb);
+    return (a.urutan??0)-(b.urutan??0);
   });
   if(jadwalToday.length===0){
     jadwalEl.innerHTML = '<div class="empty">Belum ada jadwal untuk hari ini.</div>';
   } else {
     // find current activity: last item whose jam <= now
     let currentId = null;
+    let bestJam = null;
     jadwalToday.forEach(item=>{
-      if(item.jam && item.jam<=jamStr) currentId = item.id;
+      if(item.jam && item.jam<=jamStr && (bestJam===null || item.jam>bestJam)){
+        bestJam = item.jam;
+        currentId = item.id;
+      }
     });
     jadwalEl.innerHTML = jadwalToday.map(item=>`
       <div class="sched-item" style="${item.id===currentId?`border-left-color:var(--accent);background:var(--paper);`:''}">
@@ -2002,9 +2006,25 @@ function renderProgress(){
   renderDashboard();
 }
 
+function resetLatihanDailyIfNeeded(){
+  const todayStr = new Date().toISOString().slice(0,10);
+  const lastReset = localStorage.getItem('planner_latihan_reset_date');
+  if(lastReset === todayStr) return; // sudah pernah direset hari ini
+  let changed = false;
+  (DATA.latihan||[]).forEach(item=>{
+    if(item.done){ item.done = false; changed = true; }
+  });
+  localStorage.setItem('planner_latihan_reset_date', todayStr);
+  if(changed){
+    saveLocal();
+    if(scriptUrl){ DATA.latihan.forEach(item=>callAPI('update', {sheet:'Latihan', item})); }
+  }
+}
+
 /* ---------- INIT ---------- */
 loadLocal();
 repairJadwalJam();
+resetLatihanDailyIfNeeded();
 renderAll();
 updateNotifBtn();
 if(notifEnabled && 'Notification' in window && Notification.permission==='granted'){
