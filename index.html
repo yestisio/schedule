@@ -954,14 +954,10 @@ function normalizeJam(v){
   if(v==null) return v;
   if(typeof v === 'string'){
     if(/^\d{1,2}:\d{2}$/.test(v)) return v; // sudah format jam yang benar
-    if(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(v)){
-      const d = new Date(v);
-      if(!isNaN(d.getTime())){
-        const hh = String(d.getHours()).padStart(2,'0');
-        const mm = String(d.getMinutes()).padStart(2,'0');
-        return `${hh}:${mm}`;
-      }
-    }
+    // Ambil jam:menit langsung dari string ISO tanpa lewat objek Date,
+    // supaya tidak ketimpa konversi timezone browser (bug lama: geser +7 jam).
+    const m = v.match(/T(\d{2}):(\d{2}):\d{2}/);
+    if(m) return `${m[1]}:${m[2]}`;
   }
   return v;
 }
