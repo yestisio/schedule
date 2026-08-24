@@ -572,6 +572,2045 @@
   </div>
 </div>
 
+<!-- Modal for jadwal edit -->
+<div class="modal-bg" id="jadwalModal">
+  <div class="modal">
+    <h3>Edit kegiatan</h3>
+    <div style="display:flex;gap:8px;">
+      <div class="field"><label>Hari</label>
+        <select id="je-hari"></select>
+      </div>
+      <div class="field"><label>Jam</label><input type="time" id="je-jam"></div>
+    </div>
+    <div class="field"><label>Kegiatan</label><input type="text" id="je-kegiatan" placeholder="mis. Antar anak"></div>
+    <div class="field"><label>Catatan</label><input type="text" id="je-catatan" placeholder="opsional"></div>
+    <div class="modal-actions">
+      <button class="btn danger" onclick="deleteJadwalFromModal()">Hapus</button>
+      <button class="btn ghost" onclick="closeJadwalModal()">Batal</button>
+      <button class="btn" onclick="saveJadwalModal()">Simpan</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal for confirm dialog -->
+<div class="modal-bg" id="confirmModal">
+  <div class="modal" style="max-width:340px;">
+    <h3 id="confirmTitle">Konfirmasi</h3>
+    <p id="confirmText" style="font-size:0.85rem;color:var(--ink);line-height:1.5;"></p>
+    <div class="modal-actions">
+      <button class="btn ghost" onclick="confirmNo()">Batal</button>
+      <button class="btn danger" style="background:var(--red);color:var(--white);padding:8px 16px;font-size:0.74rem;" onclick="confirmYes()">Hapus</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal for settings -->
+<div class="modal-bg" id="settingsModal">
+  <div class="modal" style="max-width:460px;">
+    <h3>Sambungkan ke Google Sheets</h3>
+    <div class="settings-box" style="border:none;padding:0;">
+      <p>Deploy skrip Apps Script (file <b>Code.gs</b> yang disertakan) sebagai Web App, lalu tempel URL-nya di sini. Data akan disimpan di Google Sheets kamu dan tetap tersimpan di browser ini sebagai cadangan.</p>
+      <div class="field">
+        <label>URL Web App</label>
+        <input type="text" id="scriptUrl" placeholder="https://script.google.com/macros/s/.../exec">
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn ghost" onclick="closeSettings()">Tutup</button>
+      <button class="btn" onclick="saveScriptUrl()">Simpan & Sinkron</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const HARI_LIST = ['Senin','Selasa','Rabu','Kamis','Jumat','Sabtu','Minggu'];
+const WAKTU_LIST = ['Sarapan','Makan Siang','Camilan Sore','Makan Malam','Camilan Malam'];
+
+let DATA = { jadwal: [], stok: [], meal: [], progress: [], latihan: [] };
+let scriptUrl = localStorage.getItem('planner_script_url') || '';
+let editingMealCell = null; // {hari, waktu, existing}
+
+const DEFAULT_SCHEDULE = [
+  ['04:30','Sholat Subuh','Lanjut tidur lagi'],
+  ['06:00','Bangun',''],
+  ['06:00','Mandi','Sampai 06.15'],
+  ['06:15','Masak + sarapan','Sampai 07.15 — masak sarapan, sekalian buat bekal makan siang, packing bekal'],
+  ['07:15','Waktu santai / persiapan berangkat','Sampai 07.45'],
+  ['07:45','Otw ke kantor','Sampai 08.00'],
+  ['08:00','Kerja','Sampai 12.00'],
+  ['12:00','Sholat Dzuhur + makan bekal','Sampai 13.00'],
+  ['13:00','Kerja','Sampai 15.15'],
+  ['15:15','Sholat Ashar','Sampai 15.30'],
+  ['15:30','Kerja','Sampai 17.00'],
+  ['17:00','Otw ke tempat pacar','Sampai 17.15'],
+  ['17:15','Sama pacar','Sampai 19.00'],
+  ['19:00','Otw balik kos','Sampai 19.20'],
+  ['19:20','Dumbbell','Sampai 20.05'],
+  ['20:05','Mandi','Sampai 20.20'],
+  ['20:20','Masak + makan malam','Sampai 21.00'],
+  ['21:00','Santai','Sampai 00.00'],
+  ['00:00','Tidur','']
+];
+const DEFAULT_SCHEDULE_WEEKEND = [
+  ['04:30','Sholat Subuh','Lanjut tidur lagi'],
+  ['07:30','Bangun, mandi, masak & sarapan','Sampai 09.00'],
+  ['09:00','Dumbbell','Sampai 10.00'],
+  ['10:00','Mandi','Sampai 10.15'],
+  ['10:15','Bebas / sama pacar + makan siang','Sampai 17.00'],
+  ['17:00','Bebas / sama pacar','Sampai 21.00'],
+  ['21:00','Masak & makan malam','Sampai 21.45'],
+  ['21:45','Santai','Sampai 00.00'],
+  ['00:00','Tidur','']
+];
+function buildDefaultJadwal(){
+  const items = [];
+  ['Senin','Selasa','Rabu','Kamis','Jumat'].forEach(hari=>{
+    DEFAULT_SCHEDULE.forEach(([jam,kegiatan,catatan],idx)=>{
+      items.push({ id: uid(), hari, jam, kegiatan, catatan, urutan: idx });
+    });
+  });
+  ['Sabtu','Minggu'].forEach(hari=>{
+    DEFAULT_SCHEDULE_WEEKEND.forEach(([jam,kegiatan,catatan],idx)=>{
+      items.push({ id: uid(), hari, jam, kegiatan, catatan, urutan: idx });
+    });
+  });
+  return items;
+}
+
+const MEAL_ROTATION = {
+  Senin:  { sarapan: ['Nasi + telur + sarden','Nasi 250–300 g, 2 telur, ½ kaleng sarden, sayur', 715, 37],
+            malam:   ['Nasi + telur + tempe','Nasi 300–350 g, 2 telur, tempe/tahu 2–3 potong, sayur', 700, 35] },
+  Selasa: { sarapan: ['Nasi + 2 telur + tempe','Nasi 250–300 g, 2 telur, tempe 2–3 potong, sayur', 665, 37],
+            malam:   ['Mi + 2 telur + nasi','1 bungkus mi instan, 2 telur, nasi 150–200 g, sayur kalau ada', 785, 27] },
+  Rabu:   { sarapan: ['Nasi + telur + sarden','Nasi 250–300 g, 2 telur, ½ kaleng sarden, sayur', 715, 37],
+            malam:   ['Nasi + telur + tahu','Nasi 300–350 g, 2 telur, tahu 2–3 potong, sayur', 665, 30] },
+  Kamis:  { sarapan: ['Nasi + 2 telur + tempe','Nasi 250–300 g, 2 telur, tempe 2–3 potong, sayur', 665, 37],
+            malam:   ['Nasi + sarden + telur','Nasi 300–350 g, ½ kaleng sarden, 2 telur, sayur', 780, 39] },
+  Jumat:  { sarapan: ['Nasi + telur + sarden','Nasi 250–300 g, 2 telur, ½ kaleng sarden, sayur', 715, 37],
+            malam:   ['Mi + 2 telur + nasi','1 bungkus mi instan, 2 telur, nasi 150–200 g, sayur kalau ada', 785, 27] }
+};
+// Perkiraan kkal/protein untuk camilan (sama tiap hari) & menu weekend
+const CAMILAN_SORE_GIZI = [200, 6];      // pisang / roti+susu / susu+pisang
+const CAMILAN_MALAM_GIZI = [250, 10];    // susu+pisang / roti+telur
+const WEEKEND_GIZI = {
+  sabtuSarapan: [665, 37],   // Nasi + telur + tempe
+  sabtuSiang:   [505, 21],   // Nasi + telur + sayur
+  sabtuSore:    [180, 6],
+  sabtuCheat:   [750, 25],   // perkiraan kasar makan bebas — sesuaikan setelah tahu menunya
+  mingguSarapan:[715, 37],   // Nasi + telur + sarden
+  mingguCheat:  [750, 25],
+  mingguSore:   [180, 6],
+  mingguMalam:  [635, 29],   // Nasi + telur + tahu + sayur
+  mingguCamilanMalam: [200, 8]
+};
+function buildDefaultMeal(){
+  const items = [];
+  ['Senin','Selasa','Rabu','Kamis','Jumat'].forEach(hari=>{
+    const r = MEAL_ROTATION[hari];
+    items.push({ id: uid(), hari, waktu:'Sarapan', menu:r.sarapan[0], catatan:r.sarapan[1], kkal:r.sarapan[2], protein:r.sarapan[3] });
+    items.push({ id: uid(), hari, waktu:'Makan Siang', menu:'Bekal — sama seperti sarapan', catatan:'Dimasak sekalian pagi, dibawa pakai wadah bekal', kkal:r.sarapan[2], protein:r.sarapan[3] });
+    items.push({ id: uid(), hari, waktu:'Camilan Sore', menu:'1–2 pisang, atau roti + susu, atau susu + pisang', catatan:'Biar kalori nggak drop sebelum dumbbell', kkal:CAMILAN_SORE_GIZI[0], protein:CAMILAN_SORE_GIZI[1] });
+    items.push({ id: uid(), hari, waktu:'Makan Malam', menu:r.malam[0], catatan:r.malam[1], kkal:r.malam[2], protein:r.malam[3] });
+    items.push({ id: uid(), hari, waktu:'Camilan Malam', menu:'Susu 250–300 ml + pisang, atau 2 roti + 1–2 telur', catatan:'Kalau kalori harian masih kurang, sebelum tidur', kkal:CAMILAN_MALAM_GIZI[0], protein:CAMILAN_MALAM_GIZI[1] });
+  });
+  return items;
+}
+
+function buildDefaultMealWeekend(){
+  const g = WEEKEND_GIZI;
+  return [
+    // Sabtu — cheat meal malam
+    { id: uid(), hari:'Sabtu', waktu:'Sarapan', menu:'Nasi + telur + tempe', catatan:'Masak santai, nggak perlu bekal', kkal:g.sabtuSarapan[0], protein:g.sabtuSarapan[1] },
+    { id: uid(), hari:'Sabtu', waktu:'Makan Siang', menu:'Nasi + telur + sayur', catatan:'Menu ringan biasa, sambil bebas/sama pacar', kkal:g.sabtuSiang[0], protein:g.sabtuSiang[1] },
+    { id: uid(), hari:'Sabtu', waktu:'Camilan Sore', menu:'1–2 pisang, atau susu', catatan:'', kkal:g.sabtuSore[0], protein:g.sabtuSore[1] },
+    { id: uid(), hari:'Sabtu', waktu:'Makan Malam', menu:'🎉 Cheating day — bebas pilih menu favorit', catatan:'Boleh makan di luar/apa aja, tetap jaga porsi jangan berlebihan (kkal/protein di bawah cuma perkiraan kasar — ubah sesuai menu asli)', kkal:g.sabtuCheat[0], protein:g.sabtuCheat[1] },
+    { id: uid(), hari:'Sabtu', waktu:'Camilan Malam', menu:'Opsional — skip kalau cheat meal udah cukup kalori', catatan:'', kkal:0, protein:0 },
+    // Minggu — cheat meal siang
+    { id: uid(), hari:'Minggu', waktu:'Sarapan', menu:'Nasi + telur + sarden', catatan:'Menu ringan seperti biasa', kkal:g.mingguSarapan[0], protein:g.mingguSarapan[1] },
+    { id: uid(), hari:'Minggu', waktu:'Makan Siang', menu:'🎉 Cheating day — bebas pilih menu favorit', catatan:'Boleh makan di luar/apa aja, tetap jaga porsi jangan berlebihan (kkal/protein di bawah cuma perkiraan kasar — ubah sesuai menu asli)', kkal:g.mingguCheat[0], protein:g.mingguCheat[1] },
+    { id: uid(), hari:'Minggu', waktu:'Camilan Sore', menu:'1–2 pisang, atau susu', catatan:'', kkal:g.mingguSore[0], protein:g.mingguSore[1] },
+    { id: uid(), hari:'Minggu', waktu:'Makan Malam', menu:'Nasi + telur + tahu + sayur', catatan:'Balik ke menu normal buat nutup weekend', kkal:g.mingguMalam[0], protein:g.mingguMalam[1] },
+    { id: uid(), hari:'Minggu', waktu:'Camilan Malam', menu:'Susu + pisang kalau masih kurang', catatan:'', kkal:g.mingguCamilanMalam[0], protein:g.mingguCamilanMalam[1] }
+  ];
+}
+
+// Target stok mingguan (jumlah aktual belum dihitung, jadi diset 0 — minimum = target
+// kebutuhan 7 hari sesuai meal plan. Update jumlah aktual setelah dicek langsung.)
+const DEFAULT_STOK = [
+  ['Beras','Pokok', 0, 'kg', 3.5, 'Target 3–4 kg/minggu'],
+  ['Telur','Protein', 0, 'butir', 38, 'Target 35–40 butir/minggu'],
+  ['Sarden','Protein', 0, 'kaleng', 6, 'Target 5–7 kaleng/minggu'],
+  ['Mi instan','Pokok', 0, 'bungkus', 4, 'Target 3–5 bungkus/minggu — untuk variasi, bukan makanan utama'],
+  ['Pisang','Buah', 0, 'buah', 12, 'Target 10–14 buah/minggu'],
+  ['Susu UHT/full cream','Susu', 0, 'liter', 2.5, 'Target ±2–3 liter (atau 7–14 kotak kecil)/minggu'],
+  ['Tempe','Protein', 0, 'kg', 1.25, 'Target ±1–1,5 kg/minggu'],
+  ['Tahu','Protein', 0, 'potong', 12, 'Target 10–15 potong/minggu'],
+  ['Sayuran','Sayur', 0, 'kg', 1.75, 'Target ±1,5–2 kg/minggu'],
+  ['Minyak goreng','Bumbu', 0, 'ml', 500, 'Target ±500 ml/minggu'],
+  ['Bumbu dasar','Bumbu', 0, 'paket', 1, 'Bawang, garam, kecap/saus, dll']
+];
+function buildDefaultStok(){
+  return DEFAULT_STOK.map(([nama,kategori,jumlah,satuan,minimum,catatan])=>(
+    { id: uid(), nama, kategori, jumlah, satuan, minimum, kadaluarsa:'', catatan }
+  ));
+}
+
+// [nama, detail(set x rep), alat]
+const LATIHAN_ROTATION = {
+  Senin: { // Push — dada, bahu, triseps
+    label: 'Push (dada, bahu, triseps)',
+    items: [
+      ['Push-up di push-up bar','3x10–12','Push-up Bar'],
+      ['Dumbbell floor press','3x10','Dumbbell'],
+      ['Dumbbell shoulder press','3x10','Dumbbell'],
+      ['Dumbbell lateral raise','3x12','Dumbbell'],
+      ['Triceps kickback','3x12','Dumbbell'],
+    ]
+  },
+  Selasa: { // Pull — punggung, bisep
+    label: 'Pull (punggung, bisep)',
+    items: [
+      ['Dumbbell bent-over row','3x10','Dumbbell'],
+      ['Dumbbell Romanian deadlift','3x10','Dumbbell'],
+      ['Dumbbell bicep curl','3x12','Dumbbell'],
+      ['Dumbbell hammer curl','3x12','Dumbbell'],
+      ['Superman hold','3x20 detik','Bodyweight'],
+    ]
+  },
+  Rabu: { // Legs & core
+    label: 'Kaki & Core',
+    items: [
+      ['Dumbbell goblet squat','3x12','Dumbbell'],
+      ['Dumbbell lunges (per kaki)','3x10','Dumbbell'],
+      ['Dumbbell calf raise','3x15','Dumbbell'],
+      ['Plank di push-up bar','3x30–40 detik','Push-up Bar'],
+      ['Mountain climber di push-up bar','3x20','Push-up Bar'],
+    ]
+  },
+  Kamis: { // Push variasi
+    label: 'Push variasi',
+    items: [
+      ['Decline push-up (kaki diangkat) di push-up bar','3x10','Push-up Bar'],
+      ['Dumbbell Arnold press','3x10','Dumbbell'],
+      ['Close-grip push-up di push-up bar','3x10','Push-up Bar'],
+      ['Dumbbell skull crusher','3x12','Dumbbell'],
+      ['Dumbbell front raise','3x12','Dumbbell'],
+    ]
+  },
+  Jumat: { // Pull variasi
+    label: 'Pull variasi',
+    items: [
+      ['Dumbbell single-arm row (per sisi)','3x10','Dumbbell'],
+      ['Dumbbell deadlift','3x10','Dumbbell'],
+      ['Dumbbell concentration curl','3x12','Dumbbell'],
+      ['Dumbbell rear delt fly','3x12','Dumbbell'],
+      ['Reverse plank hold','3x20–30 detik','Bodyweight'],
+    ]
+  },
+  Sabtu: { // Full body, sesi lebih panjang
+    label: 'Full body (sesi panjang)',
+    items: [
+      ['Push-up di push-up bar','4x12','Push-up Bar'],
+      ['Dumbbell goblet squat','4x12','Dumbbell'],
+      ['Dumbbell bent-over row','4x10','Dumbbell'],
+      ['Dumbbell shoulder press','3x10','Dumbbell'],
+      ['Dumbbell lunges (per kaki)','3x10','Dumbbell'],
+      ['Dumbbell bicep curl','3x12','Dumbbell'],
+      ['Plank di push-up bar','3x40–50 detik','Push-up Bar'],
+    ]
+  },
+  Minggu: { // Rest / mobility
+    label: 'Istirahat / mobility',
+    items: [
+      ['Stretching seluruh badan','10–15 menit','Bodyweight'],
+      ['Jalan santai (opsional)','20–30 menit','Bodyweight'],
+    ]
+  }
+};
+function buildDefaultLatihan(){
+  const items = [];
+  HARI_LIST.forEach(hari=>{
+    const rot = LATIHAN_ROTATION[hari];
+    if(!rot) return;
+    rot.items.forEach(([nama,detail,alat],idx)=>{
+      items.push({ id: uid(), hari, nama, detail, alat, done:false, urutan: idx });
+    });
+  });
+  return items;
+}
+
+function getDefaultGizi(hari, waktu){
+  const weekday = ['Senin','Selasa','Rabu','Kamis','Jumat'];
+  if(weekday.includes(hari)){
+    const r = MEAL_ROTATION[hari];
+    if(!r) return null;
+    if(waktu==='Sarapan' || waktu==='Makan Siang') return [r.sarapan[2], r.sarapan[3]];
+    if(waktu==='Makan Malam') return [r.malam[2], r.malam[3]];
+    if(waktu==='Camilan Sore') return CAMILAN_SORE_GIZI;
+    if(waktu==='Camilan Malam') return CAMILAN_MALAM_GIZI;
+  } else {
+    const g = WEEKEND_GIZI;
+    if(hari==='Sabtu'){
+      if(waktu==='Sarapan') return g.sabtuSarapan;
+      if(waktu==='Makan Siang') return g.sabtuSiang;
+      if(waktu==='Camilan Sore') return g.sabtuSore;
+      if(waktu==='Makan Malam') return g.sabtuCheat;
+      if(waktu==='Camilan Malam') return [0,0];
+    } else if(hari==='Minggu'){
+      if(waktu==='Sarapan') return g.mingguSarapan;
+      if(waktu==='Makan Siang') return g.mingguCheat;
+      if(waktu==='Camilan Sore') return g.mingguSore;
+      if(waktu==='Makan Malam') return g.mingguMalam;
+      if(waktu==='Camilan Malam') return g.mingguCamilanMalam;
+    }
+  }
+  return null;
+}
+// Isi kkal/protein bawaan untuk entri meal plan lama yang belum punya nilai gizi
+// (menu & catatan tetap dipertahankan, cuma kkal/protein yang ditambah)
+function migrateMealGizi(){
+  if(!DATA.meal || DATA.meal.length===0) return;
+  let changed = false;
+  DATA.meal.forEach(item=>{
+    const hasGizi = (item.kkal!=null && item.kkal!=='' && Number(item.kkal)>0) || (item.protein!=null && item.protein!=='' && Number(item.protein)>0);
+    if(!hasGizi){
+      const g = getDefaultGizi(item.hari, item.waktu);
+      if(g){ item.kkal = g[0]; item.protein = g[1]; changed = true; }
+    }
+  });
+  if(changed) saveLocal();
+}
+
+function loadLocal(){
+  const raw = localStorage.getItem('planner_data');
+  if(raw){
+    try{ DATA = JSON.parse(raw); }catch(e){}
+    if(!DATA.jadwal || DATA.jadwal.length===0){
+      DATA.jadwal = buildDefaultJadwal();
+      saveLocal();
+    } else {
+      const hasWeekend = DATA.jadwal.some(x=>x.hari==='Sabtu' || x.hari==='Minggu');
+      if(!hasWeekend){
+        const weekendItems = [];
+        ['Sabtu','Minggu'].forEach(hari=>{
+          DEFAULT_SCHEDULE_WEEKEND.forEach(([jam,kegiatan,catatan])=>{
+            weekendItems.push({ id: uid(), hari, jam, kegiatan, catatan });
+          });
+        });
+        DATA.jadwal = DATA.jadwal.concat(weekendItems);
+        saveLocal();
+      }
+    }
+    if(!DATA.meal || DATA.meal.length===0){
+      DATA.meal = buildDefaultMeal().concat(buildDefaultMealWeekend());
+      saveLocal();
+    } else {
+      const hasWeekendMeal = DATA.meal.some(x=>x.hari==='Sabtu' || x.hari==='Minggu');
+      if(!hasWeekendMeal){
+        DATA.meal = DATA.meal.concat(buildDefaultMealWeekend());
+        saveLocal();
+      }
+    }
+    if(!DATA.stok || DATA.stok.length===0){
+      DATA.stok = buildDefaultStok();
+      saveLocal();
+    }
+    migrateMealGizi();
+    if(!DATA.progress) DATA.progress = [];
+    if(!DATA.latihan || DATA.latihan.length===0){
+      DATA.latihan = buildDefaultLatihan();
+      saveLocal();
+    }
+  } else {
+    DATA.jadwal = buildDefaultJadwal();
+    DATA.meal = buildDefaultMeal().concat(buildDefaultMealWeekend());
+    DATA.stok = buildDefaultStok();
+    DATA.progress = [];
+    DATA.latihan = buildDefaultLatihan();
+    saveLocal();
+  }
+}
+function saveLocal(){
+  // Simpan salinan versi sebelumnya sebagai jaring pengaman, sebelum ditimpa.
+  try{
+    const prev = localStorage.getItem('planner_data');
+    if(prev) localStorage.setItem('planner_data_backup', prev);
+  }catch(e){}
+  localStorage.setItem('planner_data', JSON.stringify(DATA));
+}
+
+function totalItems(obj){
+  return (obj.jadwal||[]).length + (obj.stok||[]).length + (obj.meal||[]).length + (obj.progress||[]).length + (obj.latihan||[]).length;
+}
+
+// Google Sheets suka "mengira" nilai seperti "04:30" itu jam beneran, lalu nyimpennya
+// sebagai serial time/date. Pas dibaca balik lewat Apps Script, nilainya jadi Date object
+// yang keluar sebagai string ISO aneh (mis. "1899-12-29T21:22:48.000Z"). Fungsi ini
+// mendeteksi dan mengembalikannya jadi format "HH:MM" biasa lagi.
+function normalizeJam(v){
+  if(v==null) return v;
+  if(typeof v === 'string'){
+    if(/^\d{1,2}:\d{2}$/.test(v)) return v; // sudah format jam yang benar
+    if(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(v)){
+      const d = new Date(v);
+      if(!isNaN(d.getTime())){
+        const hh = String(d.getHours()).padStart(2,'0');
+        const mm = String(d.getMinutes()).padStart(2,'0');
+        return `${hh}:${mm}`;
+      }
+    }
+  }
+  return v;
+}
+function repairJadwalJam(){
+  let changed = false;
+  (DATA.jadwal||[]).forEach(item=>{
+    const fixed = normalizeJam(item.jam);
+    if(fixed !== item.jam){ item.jam = fixed; changed = true; }
+  });
+  if(changed) saveLocal();
+  return changed;
+}
+
+function exportBackup(){
+  const blob = new Blob([JSON.stringify(DATA, null, 2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const ts = new Date().toISOString().slice(0,19).replace(/[:T]/g,'-');
+  a.href = url;
+  a.download = `dapur-jadwal-backup-${ts}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  showToast('Backup berhasil diunduh ke perangkat kamu.');
+}
+
+async function importBackup(event){
+  const file = event.target.files[0];
+  if(!file) return;
+  try{
+    const text = await file.text();
+    const parsed = JSON.parse(text);
+    if(!parsed || typeof parsed !== 'object'){
+      showToast('File backup tidak valid.');
+      event.target.value='';
+      return;
+    }
+    const incoming = totalItems(parsed);
+    const current = totalItems(DATA);
+    const ok = await showConfirm(`File ini berisi ${incoming} item. Ini akan MENIMPA semua data yang ada sekarang (${current} item). Lanjutkan?`);
+    if(!ok){ event.target.value=''; return; }
+    DATA.jadwal = parsed.jadwal || [];
+    DATA.stok = parsed.stok || [];
+    DATA.meal = parsed.meal || [];
+    DATA.progress = parsed.progress || [];
+    DATA.latihan = parsed.latihan || [];
+    saveLocal();
+    renderAll();
+    showToast('Data berhasil dipulihkan dari file backup.');
+  }catch(e){
+    showToast('Gagal membaca file backup: ' + e.message);
+  }
+  event.target.value='';
+}
+
+function uid(){ return 'id_'+Date.now()+'_'+Math.random().toString(36).slice(2,8); }
+
+async function callAPI(action, payload={}){
+  if(!scriptUrl) return null;
+  try{
+    const res = await fetch(scriptUrl, {
+      method:'POST',
+      headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body: JSON.stringify({action, ...payload})
+    });
+    return await res.json();
+  }catch(err){
+    console.error('Sync error', err);
+    setConn(false, 'Gagal sinkron');
+    return null;
+  }
+}
+
+function setConn(on, text){
+  document.getElementById('connDot').classList.toggle('on', on);
+  document.getElementById('connText').textContent = text;
+  document.getElementById('syncBtn').style.display = on ? 'inline-block' : 'none';
+}
+
+async function syncNow(){
+  if(!scriptUrl) return openSettings();
+  setConn(false, 'Menyinkronkan...');
+  const res = await callAPI('getAll');
+
+  // Respons harus berupa object yang benar2 punya struktur data, bukan sekadar "bukan error"
+  const isValidResponse = res && typeof res === 'object' && !res.error
+    && (Array.isArray(res.jadwal) || Array.isArray(res.stok) || Array.isArray(res.meal) || Array.isArray(res.progress) || Array.isArray(res.latihan));
+
+  if(!isValidResponse){
+    setConn(false, 'Gagal sinkron — data lokal tidak diubah');
+    return;
+  }
+
+  const sheetTotal = totalItems({jadwal:res.jadwal, stok:res.stok, meal:res.meal, progress:res.progress, latihan:res.latihan});
+  const localTotal = totalItems(DATA);
+
+  if(sheetTotal===0 && localTotal>0){
+    // Sheet kosong tapi ada data lokal — dorong ke sheet, JANGAN pernah menimpa lokal jadi kosong
+    for(const item of DATA.jadwal){ await callAPI('add', {sheet:'Jadwal', item}); }
+    for(const item of DATA.stok){ await callAPI('add', {sheet:'Stok', item}); }
+    for(const item of DATA.meal){ await callAPI('add', {sheet:'MealPlan', item}); }
+    for(const item of DATA.progress){ await callAPI('add', {sheet:'Progress', item}); }
+    for(const item of DATA.latihan){ await callAPI('add', {sheet:'Latihan', item}); }
+    saveLocal();
+    renderAll();
+    setConn(true, 'Tersambung — data lokal dikirim ke sheet');
+    return;
+  }
+
+  if(sheetTotal===0 && localTotal===0){
+    saveLocal();
+    renderAll();
+    setConn(true, 'Tersambung');
+    return;
+  }
+
+  // Sheet punya data. Kalau data lokal jauh lebih banyak dari sheet, ini mencurigakan
+  // (bisa jadi sheet salah/parsial) — minta konfirmasi dulu sebelum menimpa lokal.
+  if(localTotal - sheetTotal >= 3 && localTotal > sheetTotal * 1.5){
+    const ok = await showConfirm(`Data di sheet (${sheetTotal} item) jauh lebih sedikit dari data di HP (${localTotal} item). Timpa data HP dengan data dari sheet? (Sebaiknya tekan Backup dulu kalau ragu)`);
+    if(!ok){
+      setConn(false, 'Sync dibatalkan — data lokal tidak diubah');
+      return;
+    }
+  }
+
+  DATA.jadwal = res.jadwal || [];
+  DATA.stok = res.stok || [];
+  DATA.meal = res.meal || [];
+  DATA.progress = res.progress || [];
+  DATA.latihan = res.latihan || [];
+  repairJadwalJam();
+  saveLocal();
+  renderAll();
+  setConn(true, 'Tersambung');
+}
+
+/* ---------- NOTIFIKASI ---------- */
+let notifEnabled = localStorage.getItem('planner_notif_enabled') === 'true';
+let notifInterval = null;
+
+function updateNotifBtn(){
+  const btn = document.getElementById('notifBtn');
+  if(!btn) return;
+  if(!('Notification' in window)){
+    btn.style.display = 'none';
+    return;
+  }
+  if(notifEnabled && Notification.permission==='granted'){
+    btn.textContent = '🔔 Notifikasi aktif';
+  } else {
+    btn.textContent = '🔕 Aktifkan notifikasi';
+  }
+}
+
+async function toggleNotif(){
+  if(!('Notification' in window)){
+    showToast('Browser ini tidak mendukung notifikasi.');
+    return;
+  }
+  if(notifEnabled){
+    notifEnabled = false;
+    localStorage.setItem('planner_notif_enabled','false');
+    stopNotifChecker();
+    updateNotifBtn();
+    showToast('Notifikasi dimatikan.');
+    return;
+  }
+  let perm = Notification.permission;
+  if(perm==='default'){
+    perm = await Notification.requestPermission();
+  }
+  if(perm==='granted'){
+    notifEnabled = true;
+    localStorage.setItem('planner_notif_enabled','true');
+    startNotifChecker();
+    updateNotifBtn();
+    showToast('Notifikasi aktif — kamu akan diingatkan sesuai jam di jadwal, selama tab ini terbuka.');
+  } else {
+    showToast('Izin notifikasi ditolak/diblokir browser. Ubah lewat pengaturan situs kalau berubah pikiran.');
+  }
+}
+
+function getFiredToday(){
+  const todayStr = new Date().toISOString().slice(0,10);
+  let raw = localStorage.getItem('planner_notif_fired');
+  let data = null;
+  try{ data = raw ? JSON.parse(raw) : null; }catch(e){}
+  if(!data || data.date !== todayStr){
+    data = { date: todayStr, ids: [] };
+    localStorage.setItem('planner_notif_fired', JSON.stringify(data));
+  }
+  return data;
+}
+function markFired(id){
+  const data = getFiredToday();
+  data.ids.push(id);
+  localStorage.setItem('planner_notif_fired', JSON.stringify(data));
+}
+
+function checkJadwalNotif(){
+  if(!notifEnabled || Notification.permission!=='granted') return;
+  const hari = getTodayHari();
+  const jamStr = new Date().toTimeString().slice(0,5);
+  const fired = getFiredToday();
+  DATA.jadwal.filter(x=>x.hari===hari && x.jam===jamStr).forEach(item=>{
+    if(fired.ids.includes(item.id)) return;
+    try{
+      const notif = new Notification(item.kegiatan, {
+        body: item.catatan ? `${jamStr} — ${item.catatan}` : `Waktunya sekarang (${jamStr})`,
+        tag: item.id
+      });
+      notif.onclick = ()=>{ window.focus(); };
+    }catch(e){ console.error('Notif error', e); }
+    markFired(item.id);
+  });
+}
+
+function startNotifChecker(){
+  if(notifInterval) return;
+  checkJadwalNotif();
+  notifInterval = setInterval(checkJadwalNotif, 20000);
+}
+function stopNotifChecker(){
+  if(notifInterval){ clearInterval(notifInterval); notifInterval = null; }
+}
+
+function openSettings(){
+  document.getElementById('scriptUrl').value = scriptUrl;
+  document.getElementById('settingsModal').classList.add('open');
+}
+function closeSettings(){ document.getElementById('settingsModal').classList.remove('open'); }
+async function saveScriptUrl(){
+  scriptUrl = document.getElementById('scriptUrl').value.trim();
+  localStorage.setItem('planner_script_url', scriptUrl);
+  closeSettings();
+  if(scriptUrl) await syncNow();
+}
+
+function switchTab(name){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active', t.dataset.tab===name));
+  document.querySelectorAll('.panel').forEach(p=>p.classList.toggle('active', p.id==='panel-'+name));
+}
+
+/* ---------- CONFIRM DIALOG (custom, avoids blocked window.confirm) ---------- */
+let confirmResolve = null;
+function showConfirm(message){
+  return new Promise(resolve=>{
+    confirmResolve = resolve;
+    document.getElementById('confirmText').textContent = message;
+    document.getElementById('confirmModal').classList.add('open');
+  });
+}
+function confirmYes(){
+  document.getElementById('confirmModal').classList.remove('open');
+  if(confirmResolve) confirmResolve(true);
+  confirmResolve = null;
+}
+function confirmNo(){
+  document.getElementById('confirmModal').classList.remove('open');
+  if(confirmResolve) confirmResolve(false);
+  confirmResolve = null;
+}
+
+/* ---------- TOAST (avoids blocked window.alert) ---------- */
+function showToast(message){
+  let toast = document.getElementById('toastMsg');
+  if(!toast){
+    toast = document.createElement('div');
+    toast.id = 'toastMsg';
+    toast.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--ink);color:var(--paper);font-family:Inter,sans-serif;font-size:0.82rem;padding:10px 16px;border-radius:3px;z-index:100;opacity:0;transition:opacity .2s;max-width:90%;text-align:center;';
+    document.body.appendChild(toast);
+  }
+  toast.textContent = message;
+  toast.style.opacity = '1';
+  clearTimeout(toast._t);
+  toast._t = setTimeout(()=>{ toast.style.opacity='0'; }, 2200);
+}
+
+/* ---------- JADWAL ---------- */
+async function addJadwal(){
+  const hari = document.getElementById('j-hari').value;
+  const jam = document.getElementById('j-jam').value;
+  const kegiatan = document.getElementById('j-kegiatan').value.trim();
+  const catatan = document.getElementById('j-catatan').value.trim();
+  if(!kegiatan) return;
+  const urutan = DATA.jadwal.filter(x=>x.hari===hari).length;
+  const item = { id: uid(), hari, jam, kegiatan, catatan, urutan };
+  DATA.jadwal.push(item); saveLocal(); renderJadwal();
+  document.getElementById('j-kegiatan').value='';
+  document.getElementById('j-catatan').value='';
+  if(scriptUrl){
+    const res = await callAPI('add', {sheet:'Jadwal', item});
+    if(res && res.item) { item.id = res.item.id; saveLocal(); }
+  }
+}
+async function deleteJadwal(id){
+  const item = DATA.jadwal.find(x=>x.id===id);
+  const label = item ? `"${item.kegiatan}"` : 'kegiatan ini';
+  const ok = await showConfirm(`Hapus ${label}?`);
+  if(!ok) return;
+  DATA.jadwal = DATA.jadwal.filter(x=>x.id!==id); saveLocal(); renderJadwal();
+  if(scriptUrl) await callAPI('delete', {sheet:'Jadwal', id});
+}
+function renderJadwal(){
+  const list = document.getElementById('jadwal-list');
+  list.innerHTML='';
+  const byDay = {};
+  HARI_LIST.forEach(h=>byDay[h]=[]);
+  DATA.jadwal.forEach(item=>{ if(byDay[item.hari]) byDay[item.hari].push(item); });
+  let any=false;
+  HARI_LIST.forEach(hari=>{
+    const items = byDay[hari].sort((a,b)=>{
+      const ja = a.jam||'99:99', jb = b.jam||'99:99';
+      if(ja !== jb) return ja.localeCompare(jb);
+      return (a.urutan??0)-(b.urutan??0);
+    });
+    if(items.length===0) return;
+    any=true;
+    const group = document.createElement('div');
+    group.className='day-group';
+    group.innerHTML = `<h3>${hari}</h3>`;
+    const card = document.createElement('div');
+    card.className='card';
+    items.forEach(item=>{
+      const row = document.createElement('div');
+      row.className='sched-item';
+      row.setAttribute('draggable','true');
+      row.dataset.id = item.id;
+      row.dataset.hari = hari;
+      row.style.cursor = 'pointer';
+      row.innerHTML = `
+        <span class="grip">⋮⋮</span>
+        <div class="jam">${item.jam||'--:--'}</div>
+        <div class="body">
+          <div class="kegiatan">${escapeHtml(item.kegiatan)}</div>
+          ${item.catatan?`<div class="catatan">${escapeHtml(item.catatan)}</div>`:''}
+        </div>
+        <button class="btn danger" onclick="event.stopPropagation();deleteJadwal('${item.id}')">Hapus</button>
+      `;
+      row.addEventListener('click', (e)=>{ if(e.target.closest('button')) return; openJadwalModal(item.id); });
+      row.addEventListener('dragstart', onJadwalDragStart);
+      row.addEventListener('dragover', onJadwalDragOver);
+      row.addEventListener('dragleave', onJadwalDragLeave);
+      row.addEventListener('drop', onJadwalDrop);
+      row.addEventListener('dragend', onJadwalDragEnd);
+      card.appendChild(row);
+    });
+    group.appendChild(card);
+    list.appendChild(group);
+  });
+  if(!any) list.innerHTML = '<div class="empty">Belum ada jadwal. Tambahkan kegiatan pertamamu di atas.</div>';
+  renderDashboard();
+}
+
+/* ---------- JADWAL EDIT MODAL ---------- */
+let editingJadwalId = null;
+function openJadwalModal(id){
+  const item = DATA.jadwal.find(x=>x.id===id);
+  if(!item) return;
+  editingJadwalId = id;
+  const hariSel = document.getElementById('je-hari');
+  hariSel.innerHTML = HARI_LIST.map(h=>`<option value="${h}"${h===item.hari?' selected':''}>${h}</option>`).join('');
+  document.getElementById('je-jam').value = item.jam || '';
+  document.getElementById('je-kegiatan').value = item.kegiatan || '';
+  document.getElementById('je-catatan').value = item.catatan || '';
+  document.getElementById('jadwalModal').classList.add('open');
+}
+function closeJadwalModal(){
+  document.getElementById('jadwalModal').classList.remove('open');
+  editingJadwalId = null;
+}
+async function saveJadwalModal(){
+  if(!editingJadwalId) return;
+  const item = DATA.jadwal.find(x=>x.id===editingJadwalId);
+  if(!item) return;
+  const kegiatan = document.getElementById('je-kegiatan').value.trim();
+  if(!kegiatan){ showToast('Nama kegiatan wajib diisi.'); return; }
+  item.hari = document.getElementById('je-hari').value;
+  item.jam = document.getElementById('je-jam').value;
+  item.kegiatan = kegiatan;
+  item.catatan = document.getElementById('je-catatan').value.trim();
+  saveLocal(); renderJadwal(); closeJadwalModal();
+  if(scriptUrl) await callAPI('update', {sheet:'Jadwal', item});
+}
+async function deleteJadwalFromModal(){
+  if(!editingJadwalId) return;
+  const id = editingJadwalId;
+  closeJadwalModal();
+  await deleteJadwal(id);
+}
+
+let draggedJadwalId = null;
+function onJadwalDragStart(e){
+  draggedJadwalId = e.currentTarget.dataset.id;
+  e.currentTarget.classList.add('dragging');
+  e.dataTransfer.effectAllowed = 'move';
+  try{ e.dataTransfer.setData('text/plain', draggedJadwalId); }catch(err){}
+}
+function onJadwalDragOver(e){
+  e.preventDefault();
+  if(e.currentTarget.dataset.id===draggedJadwalId) return;
+  e.currentTarget.classList.add('drag-over');
+}
+function onJadwalDragLeave(e){
+  e.currentTarget.classList.remove('drag-over');
+}
+function onJadwalDragEnd(e){
+  e.currentTarget.classList.remove('dragging');
+  document.querySelectorAll('.sched-item.drag-over').forEach(el=>el.classList.remove('drag-over'));
+}
+function onJadwalDrop(e){
+  e.preventDefault();
+  e.currentTarget.classList.remove('drag-over');
+  const targetId = e.currentTarget.dataset.id;
+  const hari = e.currentTarget.dataset.hari;
+  if(!draggedJadwalId || draggedJadwalId===targetId) return;
+  const dayItems = DATA.jadwal.filter(x=>x.hari===hari).sort((a,b)=>{
+    const ua=a.urutan, ub=b.urutan;
+    if(ua!=null && ub!=null) return ua-ub;
+    return (a.jam||'').localeCompare(b.jam||'');
+  });
+  const fromIdx = dayItems.findIndex(x=>x.id===draggedJadwalId);
+  const toIdx = dayItems.findIndex(x=>x.id===targetId);
+  if(fromIdx===-1 || toIdx===-1) return;
+  const [moved] = dayItems.splice(fromIdx,1);
+  dayItems.splice(toIdx,0,moved);
+  dayItems.forEach((item,idx)=>{ item.urutan = idx; });
+  saveLocal(); renderJadwal();
+  if(scriptUrl){ dayItems.forEach(item=>callAPI('update', {sheet:'Jadwal', item})); }
+  draggedJadwalId = null;
+}
+
+/* ---------- STOK ---------- */
+async function addStok(){
+  const nama = document.getElementById('s-nama').value.trim();
+  const kategori = document.getElementById('s-kategori').value.trim();
+  const jumlah = document.getElementById('s-jumlah').value;
+  const satuan = document.getElementById('s-satuan').value.trim();
+  const minimum = document.getElementById('s-minimum').value;
+  const kadaluarsa = document.getElementById('s-kadaluarsa').value;
+  const catatan = document.getElementById('s-catatan').value.trim();
+  if(!nama) return;
+  const item = { id: uid(), nama, kategori, jumlah: Number(jumlah)||0, satuan, minimum: Number(minimum)||0, kadaluarsa, catatan };
+  DATA.stok.push(item); saveLocal(); renderStok();
+  ['s-nama','s-kategori','s-jumlah','s-satuan','s-minimum','s-kadaluarsa','s-catatan'].forEach(id=>document.getElementById(id).value='');
+  if(scriptUrl){
+    const res = await callAPI('add', {sheet:'Stok', item});
+    if(res && res.item){ item.id = res.item.id; saveLocal(); }
+  }
+}
+async function adjustStok(id, delta){
+  const item = DATA.stok.find(x=>x.id===id);
+  if(!item) return;
+  item.jumlah = Math.max(0, Number(item.jumlah||0)+delta);
+  saveLocal(); renderStok();
+  if(scriptUrl) await callAPI('update', {sheet:'Stok', item});
+}
+async function deleteStok(id){
+  const item = DATA.stok.find(x=>x.id===id);
+  const label = item ? `"${item.nama}"` : 'bahan ini';
+  const ok = await showConfirm(`Hapus ${label} dari stok?`);
+  if(!ok) return;
+  DATA.stok = DATA.stok.filter(x=>x.id!==id); saveLocal(); renderStok();
+  if(scriptUrl) await callAPI('delete', {sheet:'Stok', id});
+}
+function renderBelanja(){
+  const list = document.getElementById('belanja-list');
+  if(!list) return;
+  list.innerHTML = '';
+  const needed = DATA.stok.filter(item=>{
+    const min = Number(item.minimum||0);
+    return min > 0 && Number(item.jumlah||0) < min;
+  });
+  const markAllBtn = document.getElementById('belanja-markall-btn');
+  if(markAllBtn) markAllBtn.style.display = needed.length>0 ? 'inline-block' : 'none';
+  if(needed.length===0){
+    list.innerHTML = '<div class="belanja-empty">Semua stok masih cukup. Belum ada yang perlu dibeli.</div>';
+    return;
+  }
+  needed.forEach(item=>{
+    const kurang = Number(item.minimum||0) - Number(item.jumlah||0);
+    const li = document.createElement('li');
+    li.className = 'belanja-item';
+    li.innerHTML = `
+      <div><span class="nama">${escapeHtml(item.nama)}</span><span class="kategori-tag">${escapeHtml(item.kategori||'')}</span></div>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <div class="kurang">+${trimNum(kurang)} ${escapeHtml(item.satuan||'')}</div>
+        <button class="btn ghost small" onclick="markBelanjaBought('${item.id}')">✓ Sudah beli</button>
+      </div>
+    `;
+    list.appendChild(li);
+  });
+}
+async function markBelanjaBought(id){
+  const item = DATA.stok.find(x=>x.id===id);
+  if(!item) return;
+  item.jumlah = Number(item.minimum||0);
+  saveLocal(); renderStok();
+  showToast(`${item.nama} ditandai sudah dibeli.`);
+  if(scriptUrl) await callAPI('update', {sheet:'Stok', item});
+}
+async function markAllBelanjaBought(){
+  const needed = DATA.stok.filter(item=>{
+    const min = Number(item.minimum||0);
+    return min > 0 && Number(item.jumlah||0) < min;
+  });
+  if(needed.length===0) return;
+  const ok = await showConfirm(`Tandai ${needed.length} bahan sebagai sudah dibeli?`);
+  if(!ok) return;
+  needed.forEach(item=>{ item.jumlah = Number(item.minimum||0); });
+  saveLocal(); renderStok();
+  showToast('Semua bahan ditandai sudah dibeli.');
+  if(scriptUrl){ for(const item of needed){ await callAPI('update', {sheet:'Stok', item}); } }
+}
+function trimNum(n){
+  const r = Math.round(n*100)/100;
+  return r;
+}
+function copyBelanja(){
+  const needed = DATA.stok.filter(item=>{
+    const min = Number(item.minimum||0);
+    return min > 0 && Number(item.jumlah||0) < min;
+  });
+  if(needed.length===0){ showToast('Belum ada yang perlu dibeli.'); return; }
+  const text = needed.map(item=>{
+    const kurang = trimNum(Number(item.minimum||0) - Number(item.jumlah||0));
+    return `- ${item.nama}: ${kurang} ${item.satuan||''}`.trim();
+  }).join('\n');
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).then(()=>{
+      showToast('Daftar belanja disalin ke clipboard.');
+    }).catch(()=>{
+      showToast('Gagal menyalin otomatis — cek daftar di atas.');
+    });
+  } else {
+    showToast('Clipboard tidak tersedia — cek daftar di atas.');
+  }
+}
+function getExpiryStatus(dateStr){
+  if(!dateStr) return null;
+  const today = new Date();
+  today.setHours(0,0,0,0);
+  const exp = new Date(dateStr+'T00:00:00');
+  if(isNaN(exp.getTime())) return null;
+  const diffDays = Math.round((exp-today)/86400000);
+  if(diffDays < 0) return { status:'expired', daysLeft:diffDays };
+  if(diffDays <= 3) return { status:'soon', daysLeft:diffDays };
+  return { status:'ok', daysLeft:diffDays };
+}
+function renderStok(){
+  renderBelanja();
+  const grid = document.getElementById('stok-list');
+  grid.innerHTML='';
+  if(DATA.stok.length===0){
+    grid.innerHTML = '<div class="empty">Belum ada bahan tercatat.</div>';
+    renderDashboard();
+    return;
+  }
+  DATA.stok.forEach(item=>{
+    const isLow = Number(item.jumlah) <= Number(item.minimum||0) && Number(item.minimum||0) > 0;
+    const exp = getExpiryStatus(item.kadaluarsa);
+    let expBadge = '';
+    let expClass = '';
+    let expTextClass = '';
+    let expLabel = item.kadaluarsa ? `Kadaluarsa: ${item.kadaluarsa}` : '';
+    if(exp){
+      if(exp.status==='expired'){
+        expBadge = '<span class="badge-expired">Kadaluarsa</span>';
+        expClass = ' expired';
+        expTextClass = ' expired';
+        expLabel = `Kadaluarsa: ${item.kadaluarsa} (lewat ${Math.abs(exp.daysLeft)} hari)`;
+      } else if(exp.status==='soon'){
+        expBadge = '<span class="badge-soon">Segera</span>';
+        expClass = ' expiring';
+        expTextClass = ' soon';
+        expLabel = exp.daysLeft===0 ? `Kadaluarsa: ${item.kadaluarsa} (hari ini)` : `Kadaluarsa: ${item.kadaluarsa} (${exp.daysLeft} hari lagi)`;
+      }
+    }
+    const div = document.createElement('div');
+    div.className = 'stok-card'+(isLow?' low':'')+expClass;
+    div.innerHTML = `
+      <div class="actions">
+        <button class="btn ghost small" onclick="adjustStok('${item.id}',-1)">−</button>
+        <button class="btn ghost small" onclick="adjustStok('${item.id}',1)">+</button>
+      </div>
+      <div class="kategori">${escapeHtml(item.kategori||'Lainnya')}</div>
+      <div class="nama">${escapeHtml(item.nama)}${isLow?'<span class="badge-low">Menipis</span>':''}${expBadge}</div>
+      <div class="jumlah${isLow?' low':''}">${item.jumlah} ${escapeHtml(item.satuan||'')}</div>
+      ${item.kadaluarsa?`<div class="expiry${expTextClass}">${expLabel}</div>`:''}
+      ${item.catatan?`<div class="expiry">${escapeHtml(item.catatan)}</div>`:''}
+      <div style="margin-top:8px;"><button class="btn danger" onclick="deleteStok('${item.id}')">Hapus</button></div>
+    `;
+    grid.appendChild(div);
+  });
+  renderDashboard();
+}
+
+/* ---------- MEAL PLAN ---------- */
+function renderMealTable(){
+  const table = document.getElementById('meal-table');
+  let html = '<tr><th>Waktu</th>';
+  HARI_LIST.forEach(h=> html += `<th>${h}</th>`);
+  html += '</tr>';
+  WAKTU_LIST.forEach(waktu=>{
+    html += `<tr><td class="waktu-col">${waktu}</td>`;
+    HARI_LIST.forEach(hari=>{
+      const item = DATA.meal.find(m=>m.hari===hari && m.waktu===waktu);
+      if(item && item.menu){
+        const gizi = (item.kkal||item.protein) ? `<div class="catatan" style="font-family:'Space Mono',monospace;">${item.kkal?item.kkal+' kkal':''}${item.kkal&&item.protein?' · ':''}${item.protein?item.protein+'g protein':''}</div>` : '';
+        html += `<td><div class="meal-cell" draggable="true" data-hari="${hari}" data-waktu="${waktu}" onclick="openMealModal('${hari}','${waktu}')">
+          <div class="menu">${escapeHtml(item.menu)}</div>
+          ${gizi}
+          ${item.catatan?`<div class="catatan">${escapeHtml(item.catatan)}</div>`:''}
+        </div></td>`;
+      } else {
+        html += `<td><div class="meal-cell empty-cell" draggable="true" data-hari="${hari}" data-waktu="${waktu}" onclick="openMealModal('${hari}','${waktu}')">+ isi</div></td>`;
+      }
+    });
+    html += '</tr>';
+  });
+  table.innerHTML = html;
+  renderRingkasan();
+  table.querySelectorAll('.meal-cell').forEach(cell=>{
+    cell.addEventListener('dragstart', onMealDragStart);
+    cell.addEventListener('dragover', onMealDragOver);
+    cell.addEventListener('dragleave', onMealDragLeave);
+    cell.addEventListener('drop', onMealDrop);
+    cell.addEventListener('dragend', onMealDragEnd);
+  });
+  renderDashboard();
+}
+
+let draggedMealSlot = null;
+function onMealDragStart(e){
+  draggedMealSlot = { hari: e.currentTarget.dataset.hari, waktu: e.currentTarget.dataset.waktu };
+  e.currentTarget.classList.add('dragging');
+  e.dataTransfer.effectAllowed = 'move';
+  try{ e.dataTransfer.setData('text/plain', JSON.stringify(draggedMealSlot)); }catch(err){}
+}
+function onMealDragOver(e){
+  e.preventDefault();
+  if(!draggedMealSlot) return;
+  if(e.currentTarget.dataset.hari!==draggedMealSlot.hari) return;
+  e.currentTarget.classList.add('drag-over');
+}
+function onMealDragLeave(e){
+  e.currentTarget.classList.remove('drag-over');
+}
+function onMealDragEnd(e){
+  document.querySelectorAll('.meal-cell.dragging').forEach(el=>el.classList.remove('dragging'));
+  document.querySelectorAll('.meal-cell.drag-over').forEach(el=>el.classList.remove('drag-over'));
+}
+async function onMealDrop(e){
+  e.preventDefault();
+  e.currentTarget.classList.remove('drag-over');
+  if(!draggedMealSlot) return;
+  const target = { hari: e.currentTarget.dataset.hari, waktu: e.currentTarget.dataset.waktu };
+  if(target.hari!==draggedMealSlot.hari){
+    showToast('Cuma bisa geser antar waktu di hari yang sama.');
+    draggedMealSlot = null;
+    return;
+  }
+  if(target.waktu===draggedMealSlot.waktu){ draggedMealSlot = null; return; }
+  await swapMealSlots(draggedMealSlot.hari, draggedMealSlot.waktu, target.waktu);
+  draggedMealSlot = null;
+}
+async function swapMealSlots(hari, waktuA, waktuB){
+  const idxA = DATA.meal.findIndex(m=>m.hari===hari && m.waktu===waktuA);
+  const idxB = DATA.meal.findIndex(m=>m.hari===hari && m.waktu===waktuB);
+  if(idxA===-1 && idxB===-1) return;
+  if(idxA!==-1 && idxB!==-1){
+    const a = DATA.meal[idxA], b = DATA.meal[idxB];
+    const tmp = { menu:a.menu, catatan:a.catatan, kkal:a.kkal, protein:a.protein };
+    a.menu=b.menu; a.catatan=b.catatan; a.kkal=b.kkal; a.protein=b.protein;
+    b.menu=tmp.menu; b.catatan=tmp.catatan; b.kkal=tmp.kkal; b.protein=tmp.protein;
+    saveLocal(); renderMealTable();
+    if(scriptUrl){ await callAPI('update', {sheet:'MealPlan', item:a}); await callAPI('update', {sheet:'MealPlan', item:b}); }
+  } else if(idxA!==-1){
+    DATA.meal[idxA].waktu = waktuB;
+    saveLocal(); renderMealTable();
+    if(scriptUrl) await callAPI('update', {sheet:'MealPlan', item: DATA.meal[idxA]});
+  } else {
+    DATA.meal[idxB].waktu = waktuA;
+    saveLocal(); renderMealTable();
+    if(scriptUrl) await callAPI('update', {sheet:'MealPlan', item: DATA.meal[idxB]});
+  }
+}
+
+const KKAL_TARGET = [2400, 2600];
+const PROTEIN_TARGET = [100, 120];
+function renderRingkasan(){
+  const strip = document.getElementById('ringkasan-strip');
+  if(!strip) return;
+  strip.innerHTML = '';
+  HARI_LIST.forEach(hari=>{
+    const items = DATA.meal.filter(m=>m.hari===hari);
+    const totalKkal = items.reduce((s,m)=>s+(Number(m.kkal)||0),0);
+    const totalProtein = items.reduce((s,m)=>s+(Number(m.protein)||0),0);
+    let status='under', label='Kurang';
+    if(totalKkal===0 && totalProtein===0){ status='under'; label='Belum diisi'; }
+    else if(totalKkal >= KKAL_TARGET[0] && totalKkal <= KKAL_TARGET[1]){ status='ok'; label='Sesuai target'; }
+    else if(totalKkal > KKAL_TARGET[1]){ status='over'; label='Lebih target'; }
+    else { status='under'; label='Kurang target'; }
+    const card = document.createElement('div');
+    card.className = 'ringkasan-card '+status;
+    card.innerHTML = `
+      <div class="hari">${hari}</div>
+      <div class="kkal">${totalKkal} kkal</div>
+      <div class="protein">${totalProtein} g protein</div>
+      <div class="status">${label}</div>
+    `;
+    strip.appendChild(card);
+  });
+}
+function openMealModal(hari, waktu){
+  const existing = DATA.meal.find(m=>m.hari===hari && m.waktu===waktu);
+  editingMealCell = { hari, waktu, existing };
+  document.getElementById('mealModalTitle').textContent = `${waktu} — ${hari}`;
+  document.getElementById('m-menu').value = existing ? existing.menu : '';
+  document.getElementById('m-kkal').value = existing && existing.kkal ? existing.kkal : '';
+  document.getElementById('m-protein').value = existing && existing.protein ? existing.protein : '';
+  document.getElementById('m-catatan').value = existing ? (existing.catatan||'') : '';
+  document.getElementById('m-delete-btn').style.display = existing ? 'inline-block' : 'none';
+  document.getElementById('mealModal').classList.add('open');
+}
+function closeMealModal(){ document.getElementById('mealModal').classList.remove('open'); editingMealCell=null; }
+async function saveMealCell(){
+  if(!editingMealCell) return;
+  const menu = document.getElementById('m-menu').value.trim();
+  const kkal = Number(document.getElementById('m-kkal').value)||0;
+  const protein = Number(document.getElementById('m-protein').value)||0;
+  const catatan = document.getElementById('m-catatan').value.trim();
+  const { hari, waktu, existing } = editingMealCell;
+  if(!menu){ closeMealModal(); return; }
+  if(existing){
+    existing.menu = menu; existing.catatan = catatan; existing.kkal = kkal; existing.protein = protein;
+    saveLocal(); renderMealTable(); closeMealModal();
+    if(scriptUrl) await callAPI('update', {sheet:'MealPlan', item: existing});
+  } else {
+    const item = { id: uid(), hari, waktu, menu, catatan, kkal, protein };
+    DATA.meal.push(item);
+    saveLocal(); renderMealTable(); closeMealModal();
+    if(scriptUrl){
+      const res = await callAPI('add', {sheet:'MealPlan', item});
+      if(res && res.item){ item.id = res.item.id; saveLocal(); }
+    }
+  }
+}
+async function deleteMealCell(){
+  if(!editingMealCell || !editingMealCell.existing) return;
+  const { hari, waktu } = editingMealCell;
+  const ok = await showConfirm(`Hapus menu ${waktu} — ${hari}?`);
+  if(!ok) return;
+  const id = editingMealCell.existing.id;
+  DATA.meal = DATA.meal.filter(x=>x.id!==id);
+  saveLocal(); renderMealTable(); closeMealModal();
+  if(scriptUrl) await callAPI('delete', {sheet:'MealPlan', id});
+}
+
+function escapeHtml(str){
+  const div = document.createElement('div');
+  div.textContent = str==null?'':String(str);
+  return div.innerHTML;
+}
+
+/* ---------- DASHBOARD / HARI INI ---------- */
+function getTodayHari(){
+  const map = ['Minggu','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu'];
+  return map[new Date().getDay()];
+}
+function renderDashboard(){
+  const dayEl = document.getElementById('dash-day');
+  if(!dayEl) return; // dashboard not in DOM yet
+
+  const hari = getTodayHari();
+  const now = new Date();
+  const tanggalStr = now.toLocaleDateString('id-ID', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
+  const jamStr = now.toTimeString().slice(0,5);
+  dayEl.textContent = `Hari ini — ${hari}`;
+  document.getElementById('dash-date').textContent = `${tanggalStr} · ${jamStr}`;
+
+  // Belanja alert
+  const alertBox = document.getElementById('dash-belanja-alert');
+  const needed = DATA.stok.filter(item=>{
+    const min = Number(item.minimum||0);
+    return min > 0 && Number(item.jumlah||0) < min;
+  });
+  if(needed.length>0){
+    alertBox.style.display = 'block';
+    alertBox.innerHTML = `
+      <div class="belanja-head"><h3>${needed.length} bahan perlu dibeli</h3></div>
+      <div style="font-size:0.82rem;color:var(--muted);">${needed.slice(0,4).map(i=>escapeHtml(i.nama)).join(', ')}${needed.length>4?`, +${needed.length-4} lagi`:''} — cek tab Stok Bahan.</div>
+    `;
+  } else {
+    alertBox.style.display = 'none';
+  }
+
+  // Kadaluarsa alert
+  const expiryBox = document.getElementById('dash-expiry-alert');
+  const expiring = DATA.stok
+    .map(item=>({ item, exp: getExpiryStatus(item.kadaluarsa) }))
+    .filter(x=>x.exp && (x.exp.status==='expired' || x.exp.status==='soon'))
+    .sort((a,b)=> a.exp.daysLeft - b.exp.daysLeft);
+  if(expiring.length>0){
+    const expiredCount = expiring.filter(x=>x.exp.status==='expired').length;
+    const soonCount = expiring.length - expiredCount;
+    const titleParts = [];
+    if(expiredCount>0) titleParts.push(`${expiredCount} sudah kadaluarsa`);
+    if(soonCount>0) titleParts.push(`${soonCount} segera kadaluarsa`);
+    expiryBox.style.display = 'block';
+    expiryBox.innerHTML = `
+      <div class="belanja-head"><h3 style="display:flex;align-items:center;gap:8px;">${titleParts.join(' · ')}</h3></div>
+      <div style="font-size:0.82rem;color:var(--muted);">
+        ${expiring.slice(0,4).map(x=>{
+          const label = x.exp.status==='expired' ? `lewat ${Math.abs(x.exp.daysLeft)} hari` : (x.exp.daysLeft===0?'hari ini':`${x.exp.daysLeft} hari lagi`);
+          return `${escapeHtml(x.item.nama)} (${label})`;
+        }).join(', ')}${expiring.length>4?`, +${expiring.length-4} lagi`:''} — cek tab Stok Bahan.
+      </div>
+    `;
+  } else {
+    expiryBox.style.display = 'none';
+  }
+
+  // Jadwal hari ini
+  const jadwalEl = document.getElementById('dash-jadwal');
+  const jadwalToday = DATA.jadwal.filter(x=>x.hari===hari).sort((a,b)=>{
+    const ua=a.urutan, ub=b.urutan;
+    if(ua!=null && ub!=null) return ua-ub;
+    return (a.jam||'').localeCompare(b.jam||'');
+  });
+  if(jadwalToday.length===0){
+    jadwalEl.innerHTML = '<div class="empty">Belum ada jadwal untuk hari ini.</div>';
+  } else {
+    // find current activity: last item whose jam <= now
+    let currentId = null;
+    jadwalToday.forEach(item=>{
+      if(item.jam && item.jam<=jamStr) currentId = item.id;
+    });
+    jadwalEl.innerHTML = jadwalToday.map(item=>`
+      <div class="sched-item" style="${item.id===currentId?`border-left-color:var(--accent);background:var(--paper);`:''}">
+        <div class="jam">${item.jam||'--:--'}</div>
+        <div class="body">
+          <div class="kegiatan">${escapeHtml(item.kegiatan)}${item.id===currentId?' <span style="color:var(--accent);font-family:\'Space Mono\',monospace;font-size:0.65rem;text-transform:uppercase;">· sekarang</span>':''}</div>
+          ${item.catatan?`<div class="catatan">${escapeHtml(item.catatan)}</div>`:''}
+        </div>
+      </div>
+    `).join('');
+  }
+
+  // Latihan hari ini
+  const latihanEl = document.getElementById('dash-latihan');
+  const latihanToday = DATA.latihan.filter(x=>x.hari===hari).sort((a,b)=>(a.urutan??0)-(b.urutan??0));
+  if(latihanToday.length===0){
+    latihanEl.innerHTML = '<div class="empty">Tidak ada latihan terjadwal hari ini.</div>';
+  } else {
+    const doneCount = latihanToday.filter(i=>i.done).length;
+    latihanEl.innerHTML = `<div style="padding:9px 10px 0;font-family:'Space Mono',monospace;font-size:0.7rem;color:var(--muted);">${doneCount}/${latihanToday.length} selesai</div>` +
+      latihanToday.map(item=>`
+        <div class="latihan-item${item.done?' done':''}">
+          <div class="check${item.done?' checked':''}" onclick="toggleLatihan('${item.id}')">${item.done?'✓':''}</div>
+          <div class="body">
+            <div class="nama-latihan">${escapeHtml(item.nama)}${item.alat?`<span class="alat-tag">${escapeHtml(item.alat)}</span>`:''}</div>
+            ${item.detail?`<div class="detail">${escapeHtml(item.detail)}</div>`:''}
+          </div>
+        </div>
+      `).join('');
+  }
+
+  // Menu hari ini
+  const mealEl = document.getElementById('dash-meal');
+  const mealToday = WAKTU_LIST.map(waktu=>DATA.meal.find(m=>m.hari===hari && m.waktu===waktu)).filter(Boolean).filter(m=>m.menu);
+  if(mealToday.length===0){
+    mealEl.innerHTML = '<div class="empty">Belum ada menu untuk hari ini.</div>';
+  } else {
+    mealEl.innerHTML = mealToday.map(item=>`
+      <div class="sched-item">
+        <div class="jam" style="min-width:90px;font-size:0.68rem;">${escapeHtml(item.waktu)}</div>
+        <div class="body">
+          <div class="kegiatan">${escapeHtml(item.menu)}</div>
+          ${item.catatan?`<div class="catatan">${escapeHtml(item.catatan)}</div>`:''}
+        </div>
+      </div>
+    `).join('');
+  }
+
+  // Berat terakhir
+  const progEl = document.getElementById('dash-progress');
+  const entries = [...DATA.progress].filter(e=>e.tanggal && e.berat).sort((a,b)=>a.tanggal.localeCompare(b.tanggal));
+  if(entries.length===0){
+    progEl.innerHTML = '<div class="empty">Belum ada catatan berat badan.</div>';
+  } else {
+    const last = entries[entries.length-1];
+    progEl.innerHTML = `
+      <div class="progress-stat">
+        <div class="label">Berat terakhir</div>
+        <div class="value">${last.berat} kg</div>
+        <div class="sub">${last.tanggal}</div>
+      </div>
+    `;
+  }
+}
+
+function renderAll(){
+  renderJadwal();
+  renderStok();
+  renderMealTable();
+  renderProgress();
+  renderLatihan();
+}
+
+/* ---------- LATIHAN ---------- */
+async function addLatihan(){
+  const hari = document.getElementById('l-hari').value;
+  const nama = document.getElementById('l-nama').value.trim();
+  const detail = document.getElementById('l-detail').value.trim();
+  const alat = document.getElementById('l-alat').value;
+  if(!nama) return;
+  const urutan = DATA.latihan.filter(x=>x.hari===hari).length;
+  const item = { id: uid(), hari, nama, detail, alat, done:false, urutan };
+  DATA.latihan.push(item); saveLocal(); renderLatihan();
+  document.getElementById('l-nama').value='';
+  document.getElementById('l-detail').value='';
+  if(scriptUrl){
+    const res = await callAPI('add', {sheet:'Latihan', item});
+    if(res && res.item){ item.id = res.item.id; saveLocal(); }
+  }
+}
+async function deleteLatihan(id){
+  const item = DATA.latihan.find(x=>x.id===id);
+  const label = item ? `"${item.nama}"` : 'latihan ini';
+  const ok = await showConfirm(`Hapus ${label}?`);
+  if(!ok) return;
+  DATA.latihan = DATA.latihan.filter(x=>x.id!==id); saveLocal(); renderLatihan();
+  if(scriptUrl) await callAPI('delete', {sheet:'Latihan', id});
+}
+async function toggleLatihan(id){
+  const item = DATA.latihan.find(x=>x.id===id);
+  if(!item) return;
+  item.done = !item.done;
+  saveLocal(); renderLatihan();
+  if(scriptUrl) await callAPI('update', {sheet:'Latihan', item});
+}
+function renderLatihan(){
+  const list = document.getElementById('latihan-list');
+  if(!list) return;
+  list.innerHTML='';
+  const byDay = {};
+  HARI_LIST.forEach(h=>byDay[h]=[]);
+  DATA.latihan.forEach(item=>{ if(byDay[item.hari]) byDay[item.hari].push(item); });
+  let any=false;
+  HARI_LIST.forEach(hari=>{
+    const items = byDay[hari].sort((a,b)=>(a.urutan??0)-(b.urutan??0));
+    if(items.length===0) return;
+    any=true;
+    const doneCount = items.filter(i=>i.done).length;
+    const group = document.createElement('div');
+    group.className='day-group';
+    const rot = LATIHAN_ROTATION[hari];
+    group.innerHTML = `<h3>${hari}${rot?` — ${escapeHtml(rot.label)}`:''} <span style="opacity:0.55;">(${doneCount}/${items.length})</span></h3>`;
+    const card = document.createElement('div');
+    card.className='card';
+    items.forEach(item=>{
+      const row = document.createElement('div');
+      row.className='latihan-item'+(item.done?' done':'');
+      row.innerHTML = `
+        <div class="check${item.done?' checked':''}" onclick="toggleLatihan('${item.id}')">${item.done?'✓':''}</div>
+        <div class="body">
+          <div class="nama-latihan">${escapeHtml(item.nama)}${item.alat?`<span class="alat-tag">${escapeHtml(item.alat)}</span>`:''}</div>
+          ${item.detail?`<div class="detail">${escapeHtml(item.detail)}</div>`:''}
+        </div>
+        <button class="btn danger" onclick="deleteLatihan('${item.id}')">Hapus</button>
+      `;
+      card.appendChild(row);
+    });
+    group.appendChild(card);
+    list.appendChild(group);
+  });
+  if(!any) list.innerHTML = '<div class="empty">Belum ada latihan. Tambahkan gerakan pertamamu di atas.</div>';
+  renderDashboard();
+}
+
+/* ---------- PROGRESS (BERAT BADAN) ---------- */
+async function addProgress(){
+  const tanggal = document.getElementById('p-tanggal').value;
+  const berat = Number(document.getElementById('p-berat').value);
+  const catatan = document.getElementById('p-catatan').value.trim();
+  if(!tanggal || !berat) return;
+  const item = { id: uid(), tanggal, berat, catatan };
+  DATA.progress.push(item); saveLocal(); renderProgress();
+  document.getElementById('p-tanggal').value='';
+  document.getElementById('p-berat').value='';
+  document.getElementById('p-catatan').value='';
+  if(scriptUrl){
+    const res = await callAPI('add', {sheet:'Progress', item});
+    if(res && res.item){ item.id = res.item.id; saveLocal(); }
+  }
+}
+async function deleteProgress(id){
+  const ok = await showConfirm('Hapus catatan berat badan ini?');
+  if(!ok) return;
+  DATA.progress = DATA.progress.filter(x=>x.id!==id); saveLocal(); renderProgress();
+  if(scriptUrl) await callAPI('delete', {sheet:'Progress', id});
+}
+function renderProgress(){
+  const summary = document.getElementById('progress-summary');
+  const list = document.getElementById('progress-list');
+  const chart = document.getElementById('progress-chart');
+  if(!summary || !list || !chart) return;
+
+  const entries = [...DATA.progress].filter(e=>e.tanggal && e.berat).sort((a,b)=>a.tanggal.localeCompare(b.tanggal));
+
+  if(entries.length===0){
+    summary.innerHTML = '';
+    chart.innerHTML = '<div class="empty">Belum ada catatan. Tambahkan berat badan pertamamu di atas.</div>';
+    list.innerHTML = '';
+    renderDashboard();
+    return;
+  }
+
+  const first = entries[0];
+  const last = entries[entries.length-1];
+  const totalChange = last.berat - first.berat;
+  const days = Math.max(1, (new Date(last.tanggal) - new Date(first.tanggal))/86400000);
+  const weeks = days/7;
+  const perWeek = weeks>0 ? totalChange/weeks : 0;
+
+  let rateStatus='under', rateLabel='Di bawah target';
+  if(perWeek >= 0.2 && perWeek <= 0.4){ rateStatus='ok'; rateLabel='Sesuai target'; }
+  else if(perWeek > 0.4){ rateStatus='over'; rateLabel='Di atas target'; }
+  else { rateStatus='under'; rateLabel='Di bawah target'; }
+
+  summary.innerHTML = `
+    <div class="progress-stat">
+      <div class="label">Berat terakhir</div>
+      <div class="value">${last.berat} kg</div>
+      <div class="sub">${last.tanggal}</div>
+    </div>
+    <div class="progress-stat">
+      <div class="label">Total perubahan</div>
+      <div class="value">${totalChange>=0?'+':''}${trimNum(totalChange)} kg</div>
+      <div class="sub">sejak ${first.tanggal}</div>
+    </div>
+    <div class="progress-stat ${rateStatus}">
+      <div class="label">Laju per minggu</div>
+      <div class="value">${perWeek>=0?'+':''}${trimNum(perWeek)} kg</div>
+      <div class="sub">${rateLabel} (0,2–0,4 kg/minggu)</div>
+    </div>
+  `;
+
+  // Chart (simple SVG line)
+  const W = 600, H = 180, PAD = 30;
+  const values = entries.map(e=>e.berat);
+  const minV = Math.min(...values), maxV = Math.max(...values);
+  const range = (maxV-minV) || 1;
+  const stepX = entries.length>1 ? (W-PAD*2)/(entries.length-1) : 0;
+  const points = entries.map((e,i)=>{
+    const x = PAD + i*stepX;
+    const y = H-PAD - ((e.berat-minV)/range)*(H-PAD*2);
+    return {x,y,berat:e.berat,tanggal:e.tanggal};
+  });
+  const pathD = points.map((p,i)=>(i===0?'M':'L')+p.x.toFixed(1)+','+p.y.toFixed(1)).join(' ');
+  const dots = points.map(p=>`<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="3.5" fill="#FF4B26"><title>${p.tanggal}: ${p.berat} kg</title></circle>`).join('');
+  chart.innerHTML = `
+    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">
+      <path d="${pathD}" fill="none" stroke="#15150F" stroke-width="2"/>
+      ${dots}
+    </svg>
+  `;
+
+  // List (newest first)
+  list.innerHTML = '';
+  const rev = [...entries].reverse();
+  rev.forEach((item,idx)=>{
+    const prevIdx = entries.indexOf(item)-1;
+    const prev = prevIdx>=0 ? entries[prevIdx] : null;
+    let deltaHtml = '';
+    if(prev){
+      const d = item.berat - prev.berat;
+      const cls = d>0?'up':(d<0?'down':'');
+      deltaHtml = `<span class="delta ${cls}">${d>=0?'+':''}${trimNum(d)} kg</span>`;
+    }
+    const row = document.createElement('div');
+    row.className = 'progress-item';
+    row.innerHTML = `
+      <div class="tgl">${item.tanggal}</div>
+      <div class="bb">${item.berat} kg${item.catatan?` <span style="color:var(--muted);font-weight:400;font-size:0.8rem;">— ${escapeHtml(item.catatan)}</span>`:''}</div>
+      ${deltaHtml}
+      <button class="btn danger" onclick="deleteProgress('${item.id}')">Hapus</button>
+    `;
+    list.appendChild(row);
+  });
+  renderDashboard();
+}
+
+/* ---------- INIT ---------- */
+loadLocal();
+repairJadwalJam();
+renderAll();
+if(scriptUrl){ setConn(false,'Menyambungkan...'); syncNow(); }
+else { setConn(false,'Belum tersambung — data disimpan lokal'); }
+updateNotifBtn();
+if(notifEnabled && 'Notification' in window && Notification.permission==='granted'){
+  startNotifChecker();
+} else if(notifEnabled && 'Notification' in window && Notification.permission!=='granted'){
+  // izin dicabut dari luar app — matikan biar tombol nggak nyangkut di status aktif
+  notifEnabled = false;
+  localStorage.setItem('planner_notif_enabled','false');
+  updateNotifBtn();
+}
+</script>
+</body>
+</html>
+  }
+  .brand h1{
+    font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:1.9rem;
+    margin:0;letter-spacing:-0.01em;
+  }
+  .brand .eyebrow{
+    font-family:'Space Mono',monospace;font-size:0.68rem;
+    text-transform:uppercase;letter-spacing:0.16em;color:var(--muted);
+    margin-bottom:4px;
+  }
+  .sync-status{
+    font-family:'Space Mono',monospace;font-size:0.7rem;
+    text-align:right;color:var(--ink);opacity:0.75;
+  }
+  .sync-status button{
+    font-family:'Space Mono',monospace;font-size:0.68rem;
+    background:none;border:1px solid var(--ink);border-radius:2px;
+    padding:5px 12px;cursor:pointer;margin-left:8px;color:var(--ink);
+    transition:all .12s;
+  }
+  .sync-status button:hover{background:var(--ink);color:var(--paper);}
+  .dot{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:6px;background:var(--red);}
+  .dot.on{background:var(--ok);}
+
+  /* TABS – flat underline, functional grid feel */
+  .tabs{display:flex;gap:0;margin-bottom:28px;border-bottom:1px solid var(--line);}
+  .tab{
+    font-family:'Space Mono',monospace;font-size:0.76rem;font-weight:700;
+    text-transform:uppercase;letter-spacing:0.08em;
+    padding:11px 18px;border:none;background:none;cursor:pointer;
+    color:var(--muted);position:relative;top:1px;
+    border-bottom:2px solid transparent;
+    display:flex;align-items:center;gap:7px;
+    transition:color .12s;
+  }
+  .tab svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:1.6;flex-shrink:0;}
+  .tab.active{color:var(--ink);border-bottom-color:var(--accent);}
+  .tab:not(.active):hover{color:var(--ink);}
+
+  .panel{display:none;}
+  .panel.active{display:block;animation:fade .2s ease;}
+  @keyframes fade{from{opacity:0;transform:translateY(3px);}to{opacity:1;transform:none;}}
+
+  h2.section-title{
+    font-family:'Space Grotesk',sans-serif;font-weight:600;
+    font-size:1.05rem;margin:0 0 16px;letter-spacing:-0.005em;
+    display:flex;align-items:center;gap:8px;
+  }
+  h2.section-title::before{
+    content:'';display:inline-block;width:8px;height:8px;background:var(--accent);
+  }
+
+  /* CARD */
+  .card{
+    background:var(--white);border:1px solid var(--line);border-radius:2px;
+  }
+
+  /* FORM ROW */
+  .add-form{
+    display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;
+    background:var(--white);border:1px solid var(--line);border-radius:2px;
+    padding:14px;margin-bottom:20px;
+  }
+  .field{display:flex;flex-direction:column;gap:4px;flex:1;min-width:110px;}
+  .field label{font-family:'Space Mono',monospace;font-size:0.62rem;text-transform:uppercase;letter-spacing:0.09em;color:var(--muted);}
+  .field input, .field select, .field textarea{
+    font-family:'Inter',sans-serif;font-size:0.88rem;
+    padding:7px 9px;border:1px solid var(--line);border-radius:2px;
+    background:var(--paper);color:var(--ink);
+  }
+  .field input:focus, .field select:focus, .field textarea:focus{outline:2px solid var(--accent);outline-offset:1px;}
+  .btn{
+    font-family:'Space Mono',monospace;font-size:0.74rem;font-weight:700;
+    text-transform:uppercase;letter-spacing:0.06em;
+    padding:8px 16px;border:none;border-radius:2px;cursor:pointer;
+    background:var(--ink);color:var(--white);white-space:nowrap;
+    transition:background .12s;
+  }
+  .btn:hover{background:var(--accent);}
+  .btn.ghost{background:none;border:1px solid var(--ink);color:var(--ink);}
+  .btn.ghost:hover{background:var(--ink);color:var(--white);}
+  .btn.danger{background:none;color:var(--red);padding:4px 8px;font-size:0.68rem;}
+  .btn.danger:hover{background:var(--red);color:var(--white);}
+  .btn.small{padding:4px 8px;font-size:0.68rem;}
+
+  /* JADWAL — day groups, time-grid feel */
+  .day-group{margin-bottom:18px;}
+  .day-group h3{
+    font-family:'Space Mono',monospace;font-size:0.72rem;text-transform:uppercase;
+    letter-spacing:0.12em;color:var(--ink);margin:0 0 6px;
+    padding-bottom:5px;border-bottom:1px solid var(--ink);
+  }
+  .sched-item{
+    display:flex;gap:14px;align-items:center;padding:9px 10px;
+    border-bottom:1px solid var(--paper-2);border-left:2px solid transparent;
+    cursor:grab;
+  }
+  .sched-item .grip{color:var(--muted);flex-shrink:0;user-select:none;font-size:0.9rem;line-height:1;letter-spacing:-1px;}
+  .sched-item.dragging{opacity:0.4;}
+  .sched-item.drag-over{border-left-color:var(--accent);background:var(--paper-2);}
+  .sched-item:hover{border-left-color:var(--accent);background:var(--paper);}
+  .sched-item:last-child{border-bottom:none;}
+  .sched-item .jam{
+    font-family:'Space Mono',monospace;font-weight:700;font-size:0.78rem;
+    color:var(--ink);min-width:50px;
+  }
+  .sched-item .body{flex:1;}
+  .sched-item .kegiatan{font-weight:600;font-size:0.92rem;}
+  .sched-item .catatan{font-size:0.78rem;color:var(--muted);}
+  .empty{
+    font-family:'Inter',sans-serif;color:var(--muted);
+    padding:16px;text-align:center;font-size:0.85rem;
+  }
+
+  /* BELANJA */
+  .belanja-box{
+    background:var(--white);border:1px solid var(--line);border-radius:2px;
+    padding:14px 16px;margin-bottom:20px;
+  }
+  .belanja-head{
+    display:flex;justify-content:space-between;align-items:center;
+    margin-bottom:10px;flex-wrap:wrap;gap:8px;
+  }
+  .belanja-head h3{
+    font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:0.95rem;
+    margin:0;display:flex;align-items:center;gap:8px;
+  }
+  .belanja-head h3::before{content:'';display:inline-block;width:8px;height:8px;background:var(--red);}
+  .belanja-list{list-style:none;margin:0;padding:0;}
+  .belanja-item{
+    display:flex;justify-content:space-between;align-items:center;gap:10px;
+    padding:7px 0;border-bottom:1px solid var(--paper-2);font-size:0.85rem;
+  }
+  .belanja-item:last-child{border-bottom:none;}
+  .belanja-item .nama{font-weight:600;}
+  .belanja-item .kategori-tag{
+    font-family:'Space Mono',monospace;font-size:0.6rem;text-transform:uppercase;
+    color:var(--muted);letter-spacing:0.06em;margin-left:6px;
+  }
+  .belanja-item .kurang{
+    font-family:'Space Mono',monospace;font-size:0.78rem;font-weight:700;color:var(--red);
+    white-space:nowrap;
+  }
+  .belanja-empty{font-size:0.83rem;color:var(--muted);}
+
+  /* PROGRESS / BERAT BADAN */
+  .progress-summary{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px;}
+  .progress-stat{
+    background:var(--white);border:1px solid var(--line);border-top:3px solid var(--muted);
+    border-radius:2px;padding:12px 16px;flex:1;min-width:140px;
+  }
+  .progress-stat.ok{border-top-color:var(--ok);}
+  .progress-stat.under{border-top-color:var(--red);}
+  .progress-stat.over{border-top-color:var(--accent);}
+  .progress-stat .label{
+    font-family:'Space Mono',monospace;font-size:0.6rem;text-transform:uppercase;
+    letter-spacing:0.08em;color:var(--muted);margin-bottom:4px;
+  }
+  .progress-stat .value{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:1.25rem;}
+  .progress-stat .sub{font-family:'Space Mono',monospace;font-size:0.68rem;color:var(--muted);margin-top:2px;}
+  .chart-box{
+    background:var(--white);border:1px solid var(--line);border-radius:2px;
+    padding:14px 16px;margin-bottom:18px;
+  }
+  .chart-box svg{width:100%;height:auto;display:block;}
+  .progress-list{background:var(--white);border:1px solid var(--line);border-radius:2px;}
+  .progress-item{
+    display:flex;gap:14px;align-items:center;padding:9px 12px;
+    border-bottom:1px solid var(--paper-2);
+  }
+  .progress-item:last-child{border-bottom:none;}
+  .progress-item .tgl{
+    font-family:'Space Mono',monospace;font-weight:700;font-size:0.78rem;min-width:90px;
+  }
+  .progress-item .bb{font-weight:600;font-size:0.92rem;flex:1;}
+  .progress-item .delta{font-family:'Space Mono',monospace;font-size:0.72rem;color:var(--muted);}
+  .progress-item .delta.up{color:var(--ok);}
+  .progress-item .delta.down{color:var(--red);}
+
+  /* LATIHAN */
+  .latihan-item{
+    display:flex;gap:12px;align-items:flex-start;padding:9px 10px;
+    border-bottom:1px solid var(--paper-2);
+  }
+  .latihan-item:last-child{border-bottom:none;}
+  .latihan-item.done{opacity:0.5;}
+  .latihan-item.done .nama-latihan{text-decoration:line-through;}
+  .latihan-item .check{
+    width:20px;height:20px;border:1.5px solid var(--ink);border-radius:2px;
+    flex-shrink:0;cursor:pointer;background:var(--white);margin-top:1px;
+    display:flex;align-items:center;justify-content:center;
+  }
+  .latihan-item .check.checked{background:var(--ok);border-color:var(--ok);color:var(--white);font-size:0.7rem;}
+  .latihan-item .body{flex:1;}
+  .latihan-item .nama-latihan{font-weight:600;font-size:0.92rem;}
+  .latihan-item .detail{font-size:0.78rem;color:var(--muted);}
+  .latihan-item .alat-tag{
+    font-family:'Space Mono',monospace;font-size:0.6rem;text-transform:uppercase;
+    letter-spacing:0.06em;color:var(--muted);background:var(--paper-2);
+    padding:1px 6px;border-radius:2px;margin-left:6px;
+  }
+
+  /* STOK */
+  .stok-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px;}
+  .stok-card{
+    background:var(--white);border:1px solid var(--line);border-radius:2px;
+    padding:12px 14px;position:relative;border-top:3px solid var(--ok);
+  }
+  .stok-card.low{border-top-color:var(--red);}
+  .stok-card .kategori{
+    font-family:'Space Mono',monospace;font-size:0.6rem;text-transform:uppercase;
+    letter-spacing:0.09em;color:var(--muted);
+  }
+  .stok-card .nama{font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:1rem;margin:3px 0 8px;}
+  .stok-card .jumlah{font-family:'Space Mono',monospace;font-size:0.92rem;}
+  .stok-card .jumlah.low{color:var(--red);font-weight:700;}
+  .stok-card .expiry{font-size:0.7rem;color:var(--muted);margin-top:4px;}
+  .stok-card .expiry.soon{color:var(--accent);font-weight:700;}
+  .stok-card .expiry.expired{color:var(--red);font-weight:700;}
+  .stok-card.expiring{border-top-color:var(--accent);}
+  .stok-card.expired{border-top-color:var(--red);}
+  .stok-card .actions{position:absolute;top:8px;right:8px;display:flex;gap:4px;}
+  .badge-low{
+    display:inline-block;font-family:'Space Mono',monospace;font-size:0.58rem;
+    background:var(--red);color:var(--white);padding:1px 6px;border-radius:2px;
+    margin-left:6px;letter-spacing:0.04em;
+  }
+  .badge-expired{
+    display:inline-block;font-family:'Space Mono',monospace;font-size:0.58rem;
+    background:var(--red);color:var(--white);padding:1px 6px;border-radius:2px;
+    margin-left:6px;letter-spacing:0.04em;
+  }
+  .badge-soon{
+    display:inline-block;font-family:'Space Mono',monospace;font-size:0.58rem;
+    background:var(--accent);color:var(--white);padding:1px 6px;border-radius:2px;
+    margin-left:6px;letter-spacing:0.04em;
+  }
+
+  /* MEAL PLAN grid */
+  .meal-table{width:100%;border-collapse:collapse;font-size:0.83rem;}
+  .meal-table th{
+    font-family:'Space Mono',monospace;font-size:0.62rem;text-transform:uppercase;
+    letter-spacing:0.07em;background:var(--ink);color:var(--paper);
+    padding:9px 6px;text-align:left;
+  }
+  .meal-table td{
+    border:1px solid var(--line);padding:8px 6px;vertical-align:top;
+    background:var(--white);min-width:108px;
+  }
+  .meal-table .waktu-col{
+    font-family:'Space Mono',monospace;font-weight:700;font-size:0.68rem;
+    text-transform:uppercase;color:var(--ink);background:var(--paper-2);
+    white-space:nowrap;
+  }
+  .meal-cell{cursor:pointer;min-height:36px;}
+  .meal-cell.drag-over{background:var(--paper-2);outline:2px dashed var(--accent);outline-offset:-2px;}
+  .meal-cell.dragging{opacity:0.4;}
+  .meal-cell .menu{font-weight:600;}
+  .meal-cell .catatan{font-size:0.7rem;color:var(--muted);}
+  .meal-cell:hover{background:var(--paper);}
+  .meal-cell.empty-cell{color:var(--muted);font-style:italic;font-family:'Inter',sans-serif;}
+  .table-scroll{overflow-x:auto;border-radius:2px;border:1px solid var(--line);}
+
+  /* RINGKASAN HARIAN */
+  .ringkasan-scroll{overflow-x:auto;margin-bottom:14px;}
+  .ringkasan-strip{display:flex;gap:8px;min-width:max-content;}
+  .ringkasan-card{
+    background:var(--white);border:1px solid var(--line);border-top:3px solid var(--muted);
+    border-radius:2px;padding:9px 12px;min-width:118px;
+  }
+  .ringkasan-card.under{border-top-color:var(--red);}
+  .ringkasan-card.ok{border-top-color:var(--ok);}
+  .ringkasan-card.over{border-top-color:var(--accent);}
+  .ringkasan-card .hari{
+    font-family:'Space Mono',monospace;font-size:0.6rem;text-transform:uppercase;
+    letter-spacing:0.08em;color:var(--muted);margin-bottom:4px;
+  }
+  .ringkasan-card .kkal{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:0.95rem;}
+  .ringkasan-card .protein{font-family:'Space Mono',monospace;font-size:0.72rem;color:var(--muted);margin-top:2px;}
+  .ringkasan-card .status{
+    font-family:'Space Mono',monospace;font-size:0.6rem;text-transform:uppercase;
+    letter-spacing:0.05em;margin-top:4px;
+  }
+  .ringkasan-card.under .status{color:var(--red);}
+  .ringkasan-card.ok .status{color:var(--ok);}
+  .ringkasan-card.over .status{color:var(--accent);}
+
+  /* MODAL */
+  .modal-bg{
+    display:none;position:fixed;inset:0;background:rgba(21,21,15,0.55);
+    align-items:center;justify-content:center;z-index:50;padding:20px;
+  }
+  .modal-bg.open{display:flex;}
+  .modal{
+    background:var(--paper);border:1px solid var(--ink);border-radius:2px;
+    padding:20px;max-width:380px;width:100%;
+  }
+  .modal h3{font-family:'Space Grotesk',sans-serif;margin-top:0;font-weight:600;}
+  .modal .field{margin-bottom:10px;}
+  .modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:12px;}
+
+  /* SETTINGS */
+  .settings-box{
+    background:var(--white);border:1px solid var(--line);border-radius:2px;
+    padding:16px;margin-bottom:20px;
+  }
+  .settings-box .field{margin-bottom:10px;}
+  .settings-box p{font-size:0.8rem;color:var(--muted);line-height:1.55;}
+
+  @media(max-width:560px){
+    .brand h1{font-size:1.5rem;}
+    header{flex-direction:column;align-items:flex-start;}
+    .sync-status{text-align:left;}
+    .tabs{
+      display:grid;
+      grid-template-columns:repeat(3,1fr);
+      gap:2px;
+    }
+    .tab{
+      justify-content:center;
+      padding:9px 4px;
+      font-size:0.6rem;
+      gap:4px;
+      letter-spacing:0.04em;
+      white-space:nowrap;
+    }
+    .tab svg{width:12px;height:12px;}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="brand">
+      <div class="eyebrow">Food · Schedule · Gym</div>
+      <h1>Kitchen & Schedule</h1>
+    </div>
+    <div class="sync-status">
+      <span><span class="dot" id="connDot"></span><span id="connText">Belum tersambung</span></span>
+      <button onclick="toggleNotif()" id="notifBtn">🔕 Aktifkan notifikasi</button>
+      <button onclick="exportBackup()">⬇️ Backup</button>
+      <button onclick="document.getElementById('restoreFile').click()">⬆️ Restore</button>
+      <input type="file" id="restoreFile" accept="application/json" style="display:none;" onchange="importBackup(event)">
+      <button onclick="openSettings()">Sambungkan</button>
+      <button onclick="syncNow()" id="syncBtn" style="display:none;">Sinkronkan</button>
+    </div>
+  </header>
+
+  <div class="tabs">
+    <div class="tab active" data-tab="dashboard" onclick="switchTab('dashboard')">
+      <svg viewBox="0 0 24 24"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/></svg>
+      Hari Ini
+    </div>
+    <div class="tab" data-tab="jadwal" onclick="switchTab('jadwal')">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>
+      Jadwal
+    </div>
+    <div class="tab" data-tab="stok" onclick="switchTab('stok')">
+      <svg viewBox="0 0 24 24"><path d="M4 8h16l-1.5 11a1.5 1.5 0 0 1-1.5 1.3H7a1.5 1.5 0 0 1-1.5-1.3L4 8Z"/><path d="M8 8V6a4 4 0 0 1 8 0v2"/></svg>
+      Stok Bahan
+    </div>
+    <div class="tab" data-tab="meal" onclick="switchTab('meal')">
+      <svg viewBox="0 0 24 24"><path d="M7 3v7a2 2 0 0 0 2 2v9M7 3v9M10 3v7M4 3v7"/><path d="M17 3c-1.5 0-2.5 2-2.5 5s1 5 1.5 5v8"/></svg>
+      Meal Plan
+    </div>
+    <div class="tab" data-tab="progress" onclick="switchTab('progress')">
+      <svg viewBox="0 0 24 24"><path d="M4 19V9M10 19V5M16 19v-7M22 19V3"/></svg>
+      Progress
+    </div>
+    <div class="tab" data-tab="latihan" onclick="switchTab('latihan')">
+      <svg viewBox="0 0 24 24"><path d="M6.5 6.5l11 11M4 8l4-4 3 3-4 4-3-3zm9 9l4-4 3 3-4 4-3-3zM2 10l2-2M20 16l2-2M8 4l2-2M16 20l2-2"/></svg>
+      Latihan
+    </div>
+  </div>
+
+  <!-- DASHBOARD / HARI INI -->
+  <div class="panel active" id="panel-dashboard">
+    <h2 class="section-title" id="dash-day">Hari ini</h2>
+    <div class="card" style="padding:12px 16px;margin-bottom:16px;">
+      <div id="dash-date" style="font-family:'Space Mono',monospace;font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--muted);"></div>
+    </div>
+
+    <div class="belanja-box" id="dash-belanja-alert" style="display:none;border-left:3px solid var(--red);"></div>
+    <div class="belanja-box" id="dash-expiry-alert" style="display:none;border-left:3px solid var(--accent);"></div>
+
+    <h2 class="section-title" style="font-size:0.9rem;">Jadwal hari ini</h2>
+    <div class="card" id="dash-jadwal" style="margin-bottom:20px;"></div>
+
+    <h2 class="section-title" style="font-size:0.9rem;">Latihan hari ini</h2>
+    <div class="card" id="dash-latihan" style="margin-bottom:20px;"></div>
+
+    <h2 class="section-title" style="font-size:0.9rem;">Menu hari ini</h2>
+    <div class="card" id="dash-meal" style="margin-bottom:20px;"></div>
+
+    <h2 class="section-title" style="font-size:0.9rem;">Berat terakhir</h2>
+    <div class="progress-summary" id="dash-progress"></div>
+  </div>
+
+  <!-- JADWAL -->
+  <div class="panel" id="panel-jadwal">
+    <h2 class="section-title">Jadwal minggu ini</h2>
+    <div class="add-form">
+      <div class="field" style="max-width:120px;">
+        <label>Hari</label>
+        <select id="j-hari">
+          <option>Senin</option><option>Selasa</option><option>Rabu</option>
+          <option>Kamis</option><option>Jumat</option><option>Sabtu</option><option>Minggu</option>
+        </select>
+      </div>
+      <div class="field" style="max-width:90px;">
+        <label>Jam</label>
+        <input type="time" id="j-jam">
+      </div>
+      <div class="field">
+        <label>Kegiatan</label>
+        <input type="text" id="j-kegiatan" placeholder="mis. Antar anak sekolah">
+      </div>
+      <div class="field">
+        <label>Catatan</label>
+        <input type="text" id="j-catatan" placeholder="opsional">
+      </div>
+      <button class="btn" onclick="addJadwal()">+ Tambah</button>
+    </div>
+    <p style="font-size:0.78rem;color:var(--muted);margin-top:-12px;margin-bottom:14px;">Tarik <span style="letter-spacing:-1px;">⋮⋮</span> untuk geser urutan dalam satu hari.</p>
+    <div id="jadwal-list"></div>
+  </div>
+
+  <!-- STOK -->
+  <div class="panel" id="panel-stok">
+    <h2 class="section-title">Stok bahan makanan</h2>
+    <div class="belanja-box">
+      <div class="belanja-head">
+        <h3>Daftar belanja</h3>
+        <div style="display:flex;gap:6px;">
+          <button class="btn ghost small" id="belanja-markall-btn" style="display:none;" onclick="markAllBelanjaBought()">✓ Tandai semua sudah beli</button>
+          <button class="btn ghost small" onclick="copyBelanja()">Salin daftar</button>
+        </div>
+      </div>
+      <ul class="belanja-list" id="belanja-list"></ul>
+    </div>
+    <div class="add-form">
+      <div class="field"><label>Nama bahan</label><input type="text" id="s-nama" placeholder="mis. Beras"></div>
+      <div class="field" style="max-width:120px;"><label>Kategori</label><input type="text" id="s-kategori" placeholder="mis. Pokok"></div>
+      <div class="field" style="max-width:80px;"><label>Jumlah</label><input type="number" id="s-jumlah" placeholder="0"></div>
+      <div class="field" style="max-width:80px;"><label>Satuan</label><input type="text" id="s-satuan" placeholder="kg / pcs"></div>
+      <div class="field" style="max-width:90px;"><label>Min. stok</label><input type="number" id="s-minimum" placeholder="0"></div>
+      <div class="field" style="max-width:140px;"><label>Kadaluarsa</label><input type="date" id="s-kadaluarsa"></div>
+      <div class="field"><label>Catatan</label><input type="text" id="s-catatan" placeholder="opsional"></div>
+      <button class="btn" onclick="addStok()">+ Tambah</button>
+    </div>
+    <div class="stok-grid" id="stok-list"></div>
+  </div>
+
+  <!-- MEAL PLAN -->
+  <div class="panel" id="panel-meal">
+    <h2 class="section-title">Rencana makan mingguan</h2>
+    <div class="card" style="padding:14px 16px;margin-bottom:16px;font-size:0.85rem;line-height:1.6;">
+      <div style="font-family:'Space Mono',monospace;font-size:0.7rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--paprika);margin-bottom:4px;">Target program — lean bulking</div>
+      TB 170 cm, BB 55 kg · target ±2.400–2.600 kkal &amp; 100–120 g protein/hari · kenaikan berat ±0,2–0,4 kg/minggu.
+      Kalau BB belum naik setelah 2–3 minggu, tambah ±150–200 kkal/hari (nasi +100–150 g atau susu + pisang).
+      <br><br>
+      <b>Target harian:</b> telur 4–6 butir · sarden ½–1 kaleng · nasi ±850–1.000 g matang · tempe/tahu 2–4 potong · buah 1–2 porsi · susu 1–2 gelas (kalau budget memungkinkan).
+    </div>
+    <p style="font-size:0.8rem;opacity:0.6;margin-top:-8px;">Klik sel untuk isi atau ubah menu. Tarik sel ke waktu lain (hari yang sama) untuk menggeser.</p>
+    <div class="ringkasan-scroll">
+      <div class="ringkasan-strip" id="ringkasan-strip"></div>
+    </div>
+    <div class="table-scroll">
+      <table class="meal-table" id="meal-table"></table>
+    </div>
+  </div>
+
+  <!-- PROGRESS -->
+  <div class="panel" id="panel-progress">
+    <h2 class="section-title">Progress berat badan</h2>
+    <div class="add-form">
+      <div class="field" style="max-width:150px;"><label>Tanggal</label><input type="date" id="p-tanggal"></div>
+      <div class="field" style="max-width:100px;"><label>Berat (kg)</label><input type="number" step="0.1" id="p-berat" placeholder="0"></div>
+      <div class="field"><label>Catatan</label><input type="text" id="p-catatan" placeholder="opsional"></div>
+      <button class="btn" onclick="addProgress()">+ Catat</button>
+    </div>
+    <div class="progress-summary" id="progress-summary"></div>
+    <div class="chart-box">
+      <div id="progress-chart"></div>
+    </div>
+    <div class="progress-list" id="progress-list"></div>
+  </div>
+
+  <!-- LATIHAN -->
+  <div class="panel" id="panel-latihan">
+    <h2 class="section-title">Latihan mingguan</h2>
+    <div class="card" style="padding:14px 16px;margin-bottom:16px;font-size:0.85rem;line-height:1.6;">
+      <div style="font-family:'Space Mono',monospace;font-size:0.7rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--accent);margin-bottom:4px;">Alat</div>
+      Dumbbell (sepasang) &amp; SPEEDS Push Up Stand Bar. Weekday ±45 menit (19.20–20.05), weekend ±60 menit (09.00–10.00).
+      Istirahat 45–60 detik antar set. Kalau semua set kerasa ringan 2 minggu berturut-turut, tambah beban/rep.
+    </div>
+    <div class="add-form">
+      <div class="field" style="max-width:120px;">
+        <label>Hari</label>
+        <select id="l-hari">
+          <option>Senin</option><option>Selasa</option><option>Rabu</option>
+          <option>Kamis</option><option>Jumat</option><option>Sabtu</option><option>Minggu</option>
+        </select>
+      </div>
+      <div class="field"><label>Nama latihan</label><input type="text" id="l-nama" placeholder="mis. Dumbbell shoulder press"></div>
+      <div class="field" style="max-width:120px;"><label>Set x Rep</label><input type="text" id="l-detail" placeholder="mis. 3x10"></div>
+      <div class="field" style="max-width:110px;">
+        <label>Alat</label>
+        <select id="l-alat">
+          <option>Dumbbell</option><option>Push-up Bar</option><option>Bodyweight</option>
+        </select>
+      </div>
+      <button class="btn" onclick="addLatihan()">+ Tambah</button>
+    </div>
+    <div id="latihan-list"></div>
+  </div>
+
+</div>
+
+<!-- Modal for meal cell edit -->
+<div class="modal-bg" id="mealModal">
+  <div class="modal">
+    <h3 id="mealModalTitle">Isi menu</h3>
+    <div class="field"><label>Menu</label><input type="text" id="m-menu" placeholder="mis. Nasi goreng ayam"></div>
+    <div style="display:flex;gap:8px;">
+      <div class="field"><label>Kalori (kkal)</label><input type="number" id="m-kkal" placeholder="opsional"></div>
+      <div class="field"><label>Protein (g)</label><input type="number" id="m-protein" placeholder="opsional"></div>
+    </div>
+    <div class="field"><label>Catatan</label><input type="text" id="m-catatan" placeholder="opsional"></div>
+    <div class="modal-actions">
+      <button class="btn danger" id="m-delete-btn" onclick="deleteMealCell()" style="display:none;">Hapus</button>
+      <button class="btn ghost" onclick="closeMealModal()">Batal</button>
+      <button class="btn" onclick="saveMealCell()">Simpan</button>
+    </div>
+  </div>
+</div>
+
 <!-- Modal for confirm dialog -->
 <div class="modal-bg" id="confirmModal">
   <div class="modal" style="max-width:340px;">
