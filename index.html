@@ -381,6 +381,7 @@
       <button onclick="exportBackup()">⬇️ Backup</button>
       <button onclick="document.getElementById('restoreFile').click()">⬆️ Restore</button>
       <input type="file" id="restoreFile" accept="application/json" style="display:none;" onchange="importBackup(event)">
+      <button onclick="openSettings()" title="Setelan Google Sheets">⚙️</button>
     </div>
   </header>
 
@@ -613,12 +614,34 @@
   </div>
 </div>
 
+<!-- Modal for settings -->
+<div class="modal-bg" id="settingsModal">
+  <div class="modal" style="max-width:460px;">
+    <h3>Simpan otomatis ke Google Sheets</h3>
+    <div class="settings-box" style="border:none;padding:0;">
+      <p>Deploy skrip Apps Script (file <b>Code.gs</b> yang disertakan) sebagai Web App, lalu tempel URL-nya di sini. Setiap kali kamu tambah/ubah/hapus data, otomatis terkirim ke Google Sheets kamu. Data utama tetap tersimpan di HP ini — Sheets cuma jadi cadangan, jadi datamu tidak akan pernah ketimpa isi dari Sheets.</p>
+      <div class="field">
+        <label>URL Web App</label>
+        <input type="text" id="scriptUrl" placeholder="https://script.google.com/macros/s/.../exec">
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn ghost" onclick="closeSettings()">Tutup</button>
+      <button class="btn" onclick="saveScriptUrl()">Simpan</button>
+    </div>
+  </div>
+</div>
+
 <script>
 const HARI_LIST = ['Senin','Selasa','Rabu','Kamis','Jumat','Sabtu','Minggu'];
 const WAKTU_LIST = ['Sarapan','Makan Siang','Camilan Sore','Makan Malam','Camilan Malam'];
 
 let DATA = { jadwal: [], stok: [], meal: [], progress: [], latihan: [] };
+let scriptUrl = localStorage.getItem('planner_script_url') || '';
 let editingMealCell = null; // {hari, waktu, existing}
+
+const SEED_DATA = {"jadwal": [{"id": "id_1787554858702_8aooho", "hari": "Senin", "jam": "04:30", "kegiatan": "Sholat Subuh", "catatan": "Lanjut tidur lagi", "urutan": 1}, {"id": "id_1787554858702_edht4b", "hari": "Senin", "jam": "06:15", "kegiatan": "Masak + sarapan", "catatan": "Sampai 07.15 — masak sarapan, sekalian buat bekal makan siang, packing bekal", "urutan": 3}, {"id": "id_1787554858702_ambzgk", "hari": "Senin", "jam": "07:45", "kegiatan": "Otw ke kantor", "catatan": "Sampai 08.00", "urutan": 5}, {"id": "id_1787554858702_e4oh6m", "hari": "Senin", "jam": "08:00", "kegiatan": "Kerja", "catatan": "Sampai 12.00", "urutan": 6}, {"id": "id_1787554858702_4mh3j8", "hari": "Senin", "jam": "12:00", "kegiatan": "Sholat Dzuhur + makan bekal", "catatan": "Sampai 13.00", "urutan": 7}, {"id": "id_1787554858702_tzkbzo", "hari": "Senin", "jam": "13:00", "kegiatan": "Kerja", "catatan": "Sampai 15.15", "urutan": 8}, {"id": "id_1787554858702_je2yvv", "hari": "Senin", "jam": "15:15", "kegiatan": "Sholat Ashar", "catatan": "Sampai 15.30", "urutan": 9}, {"id": "id_1787554858702_yr0pap", "hari": "Senin", "jam": "15:30", "kegiatan": "Kerja", "catatan": "Sampai 17.00", "urutan": 10}, {"id": "id_1787554858702_176hqd", "hari": "Senin", "jam": "17:00", "kegiatan": "Pulang/Jemput", "catatan": "Sampai 17.15", "urutan": 11}, {"id": "id_1787554858702_u101aw", "hari": "Senin", "jam": "20:15", "kegiatan": "Santai", "catatan": "Sampai 22.30", "urutan": 16}, {"id": "id_1787554858702_p8hl2n", "hari": "Senin", "jam": "23:45", "kegiatan": "Tidur", "catatan": "", "urutan": 0}, {"id": "id_1787554858703_t8rp1o", "hari": "Sabtu", "jam": "04:30", "kegiatan": "Sholat Subuh", "catatan": "Lanjut tidur lagi", "urutan": 0}, {"id": "id_1787554858703_zktzdd", "hari": "Sabtu", "jam": "09:00", "kegiatan": "Bangun, masak & sarapan", "catatan": "Sampai 10.00", "urutan": 1}, {"id": "id_1787554858703_977hrw", "hari": "Sabtu", "jam": "10:00", "kegiatan": "Dumbbell", "catatan": "Sampai 10.45", "urutan": 2}, {"id": "id_1787554858703_1bswc1", "hari": "Sabtu", "jam": "10:45", "kegiatan": "Mandi", "catatan": "Sampai 11.15", "urutan": 3}, {"id": "id_1787554858703_h8pbk8", "hari": "Sabtu", "jam": "11:15", "kegiatan": "Santai + Sholat + Makan siang + Makan malam", "catatan": "Sampai 22.30", "urutan": 4}, {"id": "id_1787554858703_5l9ib5", "hari": "Sabtu", "jam": "23:45", "kegiatan": "Tidur", "catatan": "", "urutan": 8}, {"id": "id_1787555326053_er577c", "hari": "Senin", "jam": "17:45", "kegiatan": "Sholat Maghrib", "catatan": "Sampai 18.00", "urutan": 12}, {"id": "id_1787555448468_l8xtxk", "hari": "Senin", "jam": "18:00", "kegiatan": "Santai", "catatan": "Sampai 19.00", "urutan": 13}, {"id": "id_1787555500649_05x4d4", "hari": "Senin", "jam": "19:00", "kegiatan": "Sholat Isya", "catatan": "Sampai 19.15", "urutan": 14}, {"id": "id_1787555535371_f8hldw", "hari": "Senin", "jam": "19:15", "kegiatan": "Masak + makan malam", "catatan": "Sampai 20.15", "urutan": 15}, {"id": "id_1787555918961_0q3osj", "hari": "Senin", "jam": "07:15", "kegiatan": "Mandi", "catatan": "Sampai 7.45", "urutan": 15}, {"id": "id_1787555991804_bjws69", "hari": "Senin", "jam": "22:30", "kegiatan": "Dumbbell", "catatan": "Sampai 23.15", "urutan": 16}, {"id": "id_1787556023635_hh3676", "hari": "Senin", "jam": "23:15", "kegiatan": "Mandi", "catatan": "Sampai 23.45", "urutan": 17}, {"id": "id_1787557084416_rqj3ul", "hari": "Sabtu", "jam": "22:30", "kegiatan": "Dumbbell", "catatan": "Sampai 23.15", "urutan": 6}, {"id": "id_1787557098342_9jzyda", "hari": "Sabtu", "jam": "23:15", "kegiatan": "Mandi", "catatan": "Sampai 23.45", "urutan": 7}, {"id": "id_1787730265924_mlc1uw", "hari": "Selasa", "jam": "04:30", "kegiatan": "Sholat Subuh", "catatan": "Lanjut tidur lagi", "urutan": 0}, {"id": "id_1787730265924_wv5kyk", "hari": "Selasa", "jam": "06:15", "kegiatan": "Masak + sarapan", "catatan": "Sampai 07.15 — masak sarapan, sekalian buat bekal makan siang, packing bekal", "urutan": 1}, {"id": "id_1787730265924_bjgk3n", "hari": "Selasa", "jam": "07:15", "kegiatan": "Mandi", "catatan": "Sampai 7.45", "urutan": 2}, {"id": "id_1787730265924_qinxtc", "hari": "Selasa", "jam": "07:45", "kegiatan": "Otw ke kantor", "catatan": "Sampai 08.00", "urutan": 3}, {"id": "id_1787730265924_cqvgyn", "hari": "Selasa", "jam": "08:00", "kegiatan": "Kerja", "catatan": "Sampai 12.00", "urutan": 4}, {"id": "id_1787730265924_vzcycq", "hari": "Selasa", "jam": "12:00", "kegiatan": "Sholat Dzuhur + makan bekal", "catatan": "Sampai 13.00", "urutan": 5}, {"id": "id_1787730265924_gusqkd", "hari": "Selasa", "jam": "13:00", "kegiatan": "Kerja", "catatan": "Sampai 15.15", "urutan": 6}, {"id": "id_1787730265924_qvo5bq", "hari": "Selasa", "jam": "15:15", "kegiatan": "Sholat Ashar", "catatan": "Sampai 15.30", "urutan": 7}, {"id": "id_1787730265924_btm0q2", "hari": "Selasa", "jam": "15:30", "kegiatan": "Kerja", "catatan": "Sampai 17.00", "urutan": 8}, {"id": "id_1787730265924_5kejdb", "hari": "Selasa", "jam": "17:00", "kegiatan": "Pulang/Jemput", "catatan": "Sampai 17.15", "urutan": 9}, {"id": "id_1787730265924_sip50y", "hari": "Selasa", "jam": "17:45", "kegiatan": "Sholat Maghrib", "catatan": "Sampai 18.00", "urutan": 10}, {"id": "id_1787730265924_v86we2", "hari": "Selasa", "jam": "18:00", "kegiatan": "Santai", "catatan": "Sampai 19.00", "urutan": 11}, {"id": "id_1787730265924_gr1y1u", "hari": "Selasa", "jam": "19:00", "kegiatan": "Sholat Isya", "catatan": "Sampai 19.15", "urutan": 12}, {"id": "id_1787730265924_7ix4fs", "hari": "Selasa", "jam": "19:15", "kegiatan": "Masak + makan malam", "catatan": "Sampai 20.15", "urutan": 13}, {"id": "id_1787730265924_zt3hlb", "hari": "Selasa", "jam": "20:15", "kegiatan": "Santai", "catatan": "Sampai 22.30", "urutan": 14}, {"id": "id_1787730265924_o43wxo", "hari": "Selasa", "jam": "22:30", "kegiatan": "Dumbbell", "catatan": "Sampai 23.15", "urutan": 15}, {"id": "id_1787730265924_c7mt97", "hari": "Selasa", "jam": "23:15", "kegiatan": "Mandi", "catatan": "Sampai 23.45", "urutan": 16}, {"id": "id_1787730265924_nigmoi", "hari": "Selasa", "jam": "23:45", "kegiatan": "Tidur", "catatan": "", "urutan": 17}, {"id": "id_1787730265924_cevgdo", "hari": "Rabu", "jam": "04:30", "kegiatan": "Sholat Subuh", "catatan": "Lanjut tidur lagi", "urutan": 0}, {"id": "id_1787730265924_jmjkbq", "hari": "Rabu", "jam": "06:15", "kegiatan": "Masak + sarapan", "catatan": "Sampai 07.15 — masak sarapan, sekalian buat bekal makan siang, packing bekal", "urutan": 1}, {"id": "id_1787730265924_jxuddu", "hari": "Rabu", "jam": "07:15", "kegiatan": "Mandi", "catatan": "Sampai 7.45", "urutan": 2}, {"id": "id_1787730265924_7beg7s", "hari": "Rabu", "jam": "07:45", "kegiatan": "Otw ke kantor", "catatan": "Sampai 08.00", "urutan": 3}, {"id": "id_1787730265924_905jfo", "hari": "Rabu", "jam": "08:00", "kegiatan": "Kerja", "catatan": "Sampai 12.00", "urutan": 4}, {"id": "id_1787730265924_2jot2i", "hari": "Rabu", "jam": "12:00", "kegiatan": "Sholat Dzuhur + makan bekal", "catatan": "Sampai 13.00", "urutan": 5}, {"id": "id_1787730265924_vk7ipi", "hari": "Rabu", "jam": "13:00", "kegiatan": "Kerja", "catatan": "Sampai 15.15", "urutan": 6}, {"id": "id_1787730265924_2vu6u3", "hari": "Rabu", "jam": "15:15", "kegiatan": "Sholat Ashar", "catatan": "Sampai 15.30", "urutan": 7}, {"id": "id_1787730265924_sxs05m", "hari": "Rabu", "jam": "15:30", "kegiatan": "Kerja", "catatan": "Sampai 17.00", "urutan": 8}, {"id": "id_1787730265924_z8vmqk", "hari": "Rabu", "jam": "17:00", "kegiatan": "Pulang/Jemput", "catatan": "Sampai 17.15", "urutan": 9}, {"id": "id_1787730265924_cpom69", "hari": "Rabu", "jam": "17:45", "kegiatan": "Sholat Maghrib", "catatan": "Sampai 18.00", "urutan": 10}, {"id": "id_1787730265924_ec3glx", "hari": "Rabu", "jam": "18:00", "kegiatan": "Santai", "catatan": "Sampai 19.00", "urutan": 11}, {"id": "id_1787730265924_w6tn2b", "hari": "Rabu", "jam": "19:00", "kegiatan": "Sholat Isya", "catatan": "Sampai 19.15", "urutan": 12}, {"id": "id_1787730265924_31hxr2", "hari": "Rabu", "jam": "19:15", "kegiatan": "Masak + makan malam", "catatan": "Sampai 20.15", "urutan": 13}, {"id": "id_1787730265924_7pag44", "hari": "Rabu", "jam": "20:15", "kegiatan": "Santai", "catatan": "Sampai 22.30", "urutan": 14}, {"id": "id_1787730265924_lfrvo7", "hari": "Rabu", "jam": "22:30", "kegiatan": "Dumbbell", "catatan": "Sampai 23.15", "urutan": 15}, {"id": "id_1787730265924_6dburm", "hari": "Rabu", "jam": "23:15", "kegiatan": "Mandi", "catatan": "Sampai 23.45", "urutan": 16}, {"id": "id_1787730265924_iatbcd", "hari": "Rabu", "jam": "23:45", "kegiatan": "Tidur", "catatan": "", "urutan": 17}, {"id": "id_1787730265924_kx33kr", "hari": "Kamis", "jam": "04:30", "kegiatan": "Sholat Subuh", "catatan": "Lanjut tidur lagi", "urutan": 0}, {"id": "id_1787730265924_9pf6sr", "hari": "Kamis", "jam": "06:15", "kegiatan": "Masak + sarapan", "catatan": "Sampai 07.15 — masak sarapan, sekalian buat bekal makan siang, packing bekal", "urutan": 1}, {"id": "id_1787730265924_uktl8r", "hari": "Kamis", "jam": "07:15", "kegiatan": "Mandi", "catatan": "Sampai 7.45", "urutan": 2}, {"id": "id_1787730265924_vvyoup", "hari": "Kamis", "jam": "07:45", "kegiatan": "Otw ke kantor", "catatan": "Sampai 08.00", "urutan": 3}, {"id": "id_1787730265924_qnxg7r", "hari": "Kamis", "jam": "08:00", "kegiatan": "Kerja", "catatan": "Sampai 12.00", "urutan": 4}, {"id": "id_1787730265924_5on6ks", "hari": "Kamis", "jam": "12:00", "kegiatan": "Sholat Dzuhur + makan bekal", "catatan": "Sampai 13.00", "urutan": 5}, {"id": "id_1787730265924_sys33y", "hari": "Kamis", "jam": "13:00", "kegiatan": "Kerja", "catatan": "Sampai 15.15", "urutan": 6}, {"id": "id_1787730265924_xhfo3w", "hari": "Kamis", "jam": "15:15", "kegiatan": "Sholat Ashar", "catatan": "Sampai 15.30", "urutan": 7}, {"id": "id_1787730265924_d8zmjt", "hari": "Kamis", "jam": "15:30", "kegiatan": "Kerja", "catatan": "Sampai 17.00", "urutan": 8}, {"id": "id_1787730265924_0ay7x0", "hari": "Kamis", "jam": "17:00", "kegiatan": "Pulang/Jemput", "catatan": "Sampai 17.15", "urutan": 9}, {"id": "id_1787730265924_17kkar", "hari": "Kamis", "jam": "17:45", "kegiatan": "Sholat Maghrib", "catatan": "Sampai 18.00", "urutan": 10}, {"id": "id_1787730265924_esxyqg", "hari": "Kamis", "jam": "18:00", "kegiatan": "Santai", "catatan": "Sampai 19.00", "urutan": 11}, {"id": "id_1787730265924_hs2cfl", "hari": "Kamis", "jam": "19:00", "kegiatan": "Sholat Isya", "catatan": "Sampai 19.15", "urutan": 12}, {"id": "id_1787730265924_i14sbw", "hari": "Kamis", "jam": "19:15", "kegiatan": "Masak + makan malam", "catatan": "Sampai 20.15", "urutan": 13}, {"id": "id_1787730265924_ujseyb", "hari": "Kamis", "jam": "20:15", "kegiatan": "Santai", "catatan": "Sampai 22.30", "urutan": 14}, {"id": "id_1787730265924_7vy030", "hari": "Kamis", "jam": "22:30", "kegiatan": "Dumbbell", "catatan": "Sampai 23.15", "urutan": 15}, {"id": "id_1787730265924_074dxw", "hari": "Kamis", "jam": "23:15", "kegiatan": "Mandi", "catatan": "Sampai 23.45", "urutan": 16}, {"id": "id_1787730265924_gjrfib", "hari": "Kamis", "jam": "23:45", "kegiatan": "Tidur", "catatan": "", "urutan": 17}, {"id": "id_1787730265924_po7228", "hari": "Jumat", "jam": "04:30", "kegiatan": "Sholat Subuh", "catatan": "Lanjut tidur lagi", "urutan": 0}, {"id": "id_1787730265924_u24lnf", "hari": "Jumat", "jam": "06:15", "kegiatan": "Masak + sarapan", "catatan": "Sampai 07.15 — masak sarapan, sekalian buat bekal makan siang, packing bekal", "urutan": 1}, {"id": "id_1787730265924_un6y6g", "hari": "Jumat", "jam": "07:15", "kegiatan": "Mandi", "catatan": "Sampai 7.45", "urutan": 2}, {"id": "id_1787730265924_dp5rqx", "hari": "Jumat", "jam": "07:45", "kegiatan": "Otw ke kantor", "catatan": "Sampai 08.00", "urutan": 3}, {"id": "id_1787730265924_idybhr", "hari": "Jumat", "jam": "08:00", "kegiatan": "Kerja", "catatan": "Sampai 12.00", "urutan": 4}, {"id": "id_1787730265924_q08nzf", "hari": "Jumat", "jam": "12:00", "kegiatan": "Sholat Dzuhur + makan bekal", "catatan": "Sampai 13.00", "urutan": 5}, {"id": "id_1787730265924_q4zm3t", "hari": "Jumat", "jam": "13:00", "kegiatan": "Kerja", "catatan": "Sampai 15.15", "urutan": 6}, {"id": "id_1787730265924_6o0lyi", "hari": "Jumat", "jam": "15:15", "kegiatan": "Sholat Ashar", "catatan": "Sampai 15.30", "urutan": 7}, {"id": "id_1787730265924_vvmz7p", "hari": "Jumat", "jam": "15:30", "kegiatan": "Kerja", "catatan": "Sampai 17.00", "urutan": 8}, {"id": "id_1787730265924_3tlbvd", "hari": "Jumat", "jam": "17:00", "kegiatan": "Pulang/Jemput", "catatan": "Sampai 17.15", "urutan": 9}, {"id": "id_1787730265924_478eef", "hari": "Jumat", "jam": "17:45", "kegiatan": "Sholat Maghrib", "catatan": "Sampai 18.00", "urutan": 10}, {"id": "id_1787730265924_a8d6nd", "hari": "Jumat", "jam": "18:00", "kegiatan": "Santai", "catatan": "Sampai 19.00", "urutan": 11}, {"id": "id_1787730265924_yzf94w", "hari": "Jumat", "jam": "19:00", "kegiatan": "Sholat Isya", "catatan": "Sampai 19.15", "urutan": 12}, {"id": "id_1787730265924_pez5yu", "hari": "Jumat", "jam": "19:15", "kegiatan": "Masak + makan malam", "catatan": "Sampai 20.15", "urutan": 13}, {"id": "id_1787730265924_qi0n1m", "hari": "Jumat", "jam": "20:15", "kegiatan": "Santai", "catatan": "Sampai 22.30", "urutan": 14}, {"id": "id_1787730265924_i4vchh", "hari": "Jumat", "jam": "22:30", "kegiatan": "Dumbbell", "catatan": "Sampai 23.15", "urutan": 15}, {"id": "id_1787730265924_47459l", "hari": "Jumat", "jam": "23:15", "kegiatan": "Mandi", "catatan": "Sampai 23.45", "urutan": 16}, {"id": "id_1787730265924_keznwv", "hari": "Jumat", "jam": "23:45", "kegiatan": "Tidur", "catatan": "", "urutan": 17}, {"id": "id_1787730267620_l6mbnh", "hari": "Minggu", "jam": "04:30", "kegiatan": "Sholat Subuh", "catatan": "Lanjut tidur lagi", "urutan": 0}, {"id": "id_1787730267620_8mjmjt", "hari": "Minggu", "jam": "09:00", "kegiatan": "Bangun, masak & sarapan", "catatan": "Sampai 10.00", "urutan": 1}, {"id": "id_1787730267620_73l5cq", "hari": "Minggu", "jam": "10:00", "kegiatan": "Dumbbell", "catatan": "Sampai 10.45", "urutan": 2}, {"id": "id_1787730267620_1mjtmy", "hari": "Minggu", "jam": "10:45", "kegiatan": "Mandi", "catatan": "Sampai 11.15", "urutan": 3}, {"id": "id_1787730267620_486epi", "hari": "Minggu", "jam": "11:15", "kegiatan": "Santai + Sholat + Makan siang + Makan malam", "catatan": "Sampai 22.30", "urutan": 4}, {"id": "id_1787730267620_u8yx95", "hari": "Minggu", "jam": "22:30", "kegiatan": "Dumbbell", "catatan": "Sampai 23.15", "urutan": 5}, {"id": "id_1787730267620_1upbnv", "hari": "Minggu", "jam": "23:15", "kegiatan": "Mandi", "catatan": "Sampai 23.45", "urutan": 6}, {"id": "id_1787730267620_u1chgz", "hari": "Minggu", "jam": "23:45", "kegiatan": "Tidur", "catatan": "", "urutan": 7}], "stok": [{"id": "id_1787554858704_uzg8np", "nama": "Beras", "kategori": "Pokok", "jumlah": 2, "satuan": "kg", "minimum": 3.5, "kadaluarsa": "", "catatan": "Target 3–4 kg/minggu"}, {"id": "id_1787554858704_fwjbpw", "nama": "Telur", "kategori": "Protein", "jumlah": 16, "satuan": "butir", "minimum": 38, "kadaluarsa": "", "catatan": "Target 35–40 butir/minggu"}, {"id": "id_1787554858704_ov1d0d", "nama": "Sarden", "kategori": "Protein", "jumlah": 4, "satuan": "kaleng", "minimum": 6, "kadaluarsa": "", "catatan": "Target 5–7 kaleng/minggu"}, {"id": "id_1787554858704_i6g25o", "nama": "Mi instan", "kategori": "Pokok", "jumlah": 15, "satuan": "bungkus", "minimum": 4, "kadaluarsa": "", "catatan": "Target 3–5 bungkus/minggu — untuk variasi, bukan makanan utama"}, {"id": "id_1787554858704_3p37k1", "nama": "Pisang", "kategori": "Buah", "jumlah": 0, "satuan": "buah", "minimum": 12, "kadaluarsa": "", "catatan": "Target 10–14 buah/minggu"}, {"id": "id_1787554858704_e23p66", "nama": "Susu UHT/full cream", "kategori": "Susu", "jumlah": 0, "satuan": "liter", "minimum": 2.5, "kadaluarsa": "", "catatan": "Target ±2–3 liter (atau 7–14 kotak kecil)/minggu"}, {"id": "id_1787554858704_v1zlw9", "nama": "Tempe", "kategori": "Protein", "jumlah": 0, "satuan": "kg", "minimum": 1.25, "kadaluarsa": "", "catatan": "Target ±1–1,5 kg/minggu"}, {"id": "id_1787554858704_a1wige", "nama": "Tahu", "kategori": "Protein", "jumlah": 0, "satuan": "potong", "minimum": 12, "kadaluarsa": "", "catatan": "Target 10–15 potong/minggu"}, {"id": "id_1787554858704_x6q9u5", "nama": "Sayuran", "kategori": "Sayur", "jumlah": 0, "satuan": "kg", "minimum": 1.75, "kadaluarsa": "", "catatan": "Target ±1,5–2 kg/minggu"}, {"id": "id_1787554858704_604965", "nama": "Minyak goreng", "kategori": "Bumbu", "jumlah": 501, "satuan": "ml", "minimum": 500, "kadaluarsa": "", "catatan": "Target ±500 ml/minggu"}, {"id": "id_1787554858704_cauvpa", "nama": "Bumbu dasar", "kategori": "Bumbu", "jumlah": 2, "satuan": "paket", "minimum": 1, "kadaluarsa": "", "catatan": "Bawang, garam, kecap/saus, dll"}], "meal": [{"id": "id_1787554858703_7un26t", "hari": "Senin", "waktu": "Sarapan", "menu": "Nasi + telur + sarden", "catatan": "Nasi 250–300 g, 2 telur, ½ kaleng sarden, sayur", "kkal": 715, "protein": 37}, {"id": "id_1787554858703_gf89f1", "hari": "Senin", "waktu": "Makan Siang", "menu": "Bekal — sama seperti sarapan", "catatan": "Dimasak sekalian pagi, dibawa pakai wadah bekal", "kkal": 715, "protein": 37}, {"id": "id_1787554858703_yrt0mz", "hari": "Senin", "waktu": "Camilan Sore", "menu": "1–2 pisang, atau roti + susu, atau susu + pisang", "catatan": "Biar kalori nggak drop sebelum dumbbell", "kkal": 200, "protein": 6}, {"id": "id_1787554858703_k7qjwo", "hari": "Senin", "waktu": "Makan Malam", "menu": "Nasi + telur + tempe", "catatan": "Nasi 300–350 g, 2 telur, tempe/tahu 2–3 potong, sayur", "kkal": 700, "protein": 35}, {"id": "id_1787554858703_e8342k", "hari": "Senin", "waktu": "Camilan Malam", "menu": "Susu 250–300 ml + pisang, atau 2 roti + 1–2 telur", "catatan": "Kalau kalori harian masih kurang, sebelum tidur", "kkal": 250, "protein": 10}, {"id": "id_1787554858704_satf8b", "hari": "Selasa", "waktu": "Sarapan", "menu": "Nasi + 2 telur + tempe", "catatan": "Nasi 250–300 g, 2 telur, tempe 2–3 potong, sayur", "kkal": 665, "protein": 37}, {"id": "id_1787554858704_7k3ujm", "hari": "Selasa", "waktu": "Makan Siang", "menu": "Bekal — sama seperti sarapan", "catatan": "Dimasak sekalian pagi, dibawa pakai wadah bekal", "kkal": 665, "protein": 37}, {"id": "id_1787554858704_en3lwy", "hari": "Selasa", "waktu": "Camilan Sore", "menu": "1–2 pisang, atau roti + susu, atau susu + pisang", "catatan": "Biar kalori nggak drop sebelum dumbbell", "kkal": 200, "protein": 6}, {"id": "id_1787554858704_7dguhk", "hari": "Selasa", "waktu": "Makan Malam", "menu": "Mi + 2 telur + nasi", "catatan": "1 bungkus mi instan, 2 telur, nasi 150–200 g, sayur kalau ada", "kkal": 785, "protein": 27}, {"id": "id_1787554858704_qfevph", "hari": "Selasa", "waktu": "Camilan Malam", "menu": "Susu 250–300 ml + pisang, atau 2 roti + 1–2 telur", "catatan": "Kalau kalori harian masih kurang, sebelum tidur", "kkal": 250, "protein": 10}, {"id": "id_1787554858704_dbl6mn", "hari": "Rabu", "waktu": "Sarapan", "menu": "Nasi + telur + sarden", "catatan": "Nasi 250–300 g, 2 telur, ½ kaleng sarden, sayur", "kkal": 715, "protein": 37}, {"id": "id_1787554858704_mwge3v", "hari": "Rabu", "waktu": "Makan Siang", "menu": "Bekal — sama seperti sarapan", "catatan": "Dimasak sekalian pagi, dibawa pakai wadah bekal", "kkal": 715, "protein": 37}, {"id": "id_1787554858704_9xfodm", "hari": "Rabu", "waktu": "Camilan Sore", "menu": "1–2 pisang, atau roti + susu, atau susu + pisang", "catatan": "Biar kalori nggak drop sebelum dumbbell", "kkal": 200, "protein": 6}, {"id": "id_1787554858704_8ycopv", "hari": "Rabu", "waktu": "Makan Malam", "menu": "Nasi + telur + tahu", "catatan": "Nasi 300–350 g, 2 telur, tahu 2–3 potong, sayur", "kkal": 665, "protein": 30}, {"id": "id_1787554858704_g31eur", "hari": "Rabu", "waktu": "Camilan Malam", "menu": "Susu 250–300 ml + pisang, atau 2 roti + 1–2 telur", "catatan": "Kalau kalori harian masih kurang, sebelum tidur", "kkal": 250, "protein": 10}, {"id": "id_1787554858704_kfr6uv", "hari": "Kamis", "waktu": "Sarapan", "menu": "Nasi + 2 telur + tempe", "catatan": "Nasi 250–300 g, 2 telur, tempe 2–3 potong, sayur", "kkal": 665, "protein": 37}, {"id": "id_1787554858704_iq79zc", "hari": "Kamis", "waktu": "Makan Siang", "menu": "Bekal — sama seperti sarapan", "catatan": "Dimasak sekalian pagi, dibawa pakai wadah bekal", "kkal": 665, "protein": 37}, {"id": "id_1787554858704_u3cy6h", "hari": "Kamis", "waktu": "Camilan Sore", "menu": "1–2 pisang, atau roti + susu, atau susu + pisang", "catatan": "Biar kalori nggak drop sebelum dumbbell", "kkal": 200, "protein": 6}, {"id": "id_1787554858704_uhoa89", "hari": "Kamis", "waktu": "Makan Malam", "menu": "Nasi + sarden + telur", "catatan": "Nasi 300–350 g, ½ kaleng sarden, 2 telur, sayur", "kkal": 780, "protein": 39}, {"id": "id_1787554858704_oj2cim", "hari": "Kamis", "waktu": "Camilan Malam", "menu": "Susu 250–300 ml + pisang, atau 2 roti + 1–2 telur", "catatan": "Kalau kalori harian masih kurang, sebelum tidur", "kkal": 250, "protein": 10}, {"id": "id_1787554858704_h8bzi1", "hari": "Jumat", "waktu": "Sarapan", "menu": "Nasi + telur + sarden", "catatan": "Nasi 250–300 g, 2 telur, ½ kaleng sarden, sayur", "kkal": 715, "protein": 37}, {"id": "id_1787554858704_5ov5st", "hari": "Jumat", "waktu": "Makan Siang", "menu": "Bekal — sama seperti sarapan", "catatan": "Dimasak sekalian pagi, dibawa pakai wadah bekal", "kkal": 715, "protein": 37}, {"id": "id_1787554858704_emep1o", "hari": "Jumat", "waktu": "Camilan Sore", "menu": "1–2 pisang, atau roti + susu, atau susu + pisang", "catatan": "Biar kalori nggak drop sebelum dumbbell", "kkal": 200, "protein": 6}, {"id": "id_1787554858704_gz27cn", "hari": "Jumat", "waktu": "Makan Malam", "menu": "Mi + 2 telur + nasi", "catatan": "1 bungkus mi instan, 2 telur, nasi 150–200 g, sayur kalau ada", "kkal": 785, "protein": 27}, {"id": "id_1787554858704_3bjsll", "hari": "Jumat", "waktu": "Camilan Malam", "menu": "Susu 250–300 ml + pisang, atau 2 roti + 1–2 telur", "catatan": "Kalau kalori harian masih kurang, sebelum tidur", "kkal": 250, "protein": 10}, {"id": "id_1787554858704_by4y8l", "hari": "Sabtu", "waktu": "Sarapan", "menu": "Nasi + telur + tempe", "catatan": "Masak santai, nggak perlu bekal", "kkal": 665, "protein": 37}, {"id": "id_1787554858704_0bqv4m", "hari": "Sabtu", "waktu": "Makan Siang", "menu": "Nasi + telur + sayur", "catatan": "Menu ringan biasa, sambil bebas/sama pacar", "kkal": 505, "protein": 21}, {"id": "id_1787554858704_6tqb1s", "hari": "Sabtu", "waktu": "Camilan Sore", "menu": "1–2 pisang, atau susu", "catatan": "", "kkal": 180, "protein": 6}, {"id": "id_1787554858704_w4em98", "hari": "Sabtu", "waktu": "Makan Malam", "menu": "🎉 Cheating day — bebas pilih menu favorit", "catatan": "Boleh makan di luar/apa aja, tetap jaga porsi jangan berlebihan (kkal/protein di bawah cuma perkiraan kasar — ubah sesuai menu asli)", "kkal": 750, "protein": 25}, {"id": "id_1787554858704_ic67aa", "hari": "Sabtu", "waktu": "Camilan Malam", "menu": "Opsional — skip kalau cheat meal udah cukup kalori", "catatan": "", "kkal": 0, "protein": 0}, {"id": "id_1787554858704_37hj74", "hari": "Minggu", "waktu": "Sarapan", "menu": "Nasi + telur + sarden", "catatan": "Menu ringan seperti biasa", "kkal": 715, "protein": 37}, {"id": "id_1787554858704_zj5dyz", "hari": "Minggu", "waktu": "Makan Siang", "menu": "🎉 Cheating day — bebas pilih menu favorit", "catatan": "Boleh makan di luar/apa aja, tetap jaga porsi jangan berlebihan (kkal/protein di bawah cuma perkiraan kasar — ubah sesuai menu asli)", "kkal": 750, "protein": 25}, {"id": "id_1787554858704_yngw5b", "hari": "Minggu", "waktu": "Camilan Sore", "menu": "1–2 pisang, atau susu", "catatan": "", "kkal": 180, "protein": 6}, {"id": "id_1787554858704_wce5aq", "hari": "Minggu", "waktu": "Makan Malam", "menu": "Nasi + telur + tahu + sayur", "catatan": "Balik ke menu normal buat nutup weekend", "kkal": 635, "protein": 29}, {"id": "id_1787554858704_dmjo93", "hari": "Minggu", "waktu": "Camilan Malam", "menu": "Susu + pisang kalau masih kurang", "catatan": "", "kkal": 200, "protein": 8}], "progress": [{"id": "id_1787558921888_xrrb1d", "tanggal": "2026-08-24", "berat": 55, "catatan": ""}], "latihan": [{"id": "id_1787554858704_vgmhwp", "hari": "Senin", "nama": "Push-up di push-up bar", "detail": "3x10–12", "alat": "Push-up Bar", "done": false, "urutan": 0}, {"id": "id_1787554858704_prgspp", "hari": "Senin", "nama": "Dumbbell floor press", "detail": "3x10", "alat": "Dumbbell", "done": false, "urutan": 1}, {"id": "id_1787554858704_736jnp", "hari": "Senin", "nama": "Dumbbell shoulder press", "detail": "3x10", "alat": "Dumbbell", "done": false, "urutan": 2}, {"id": "id_1787554858704_azbzx1", "hari": "Senin", "nama": "Dumbbell lateral raise", "detail": "3x12", "alat": "Dumbbell", "done": false, "urutan": 3}, {"id": "id_1787554858704_v5exj7", "hari": "Senin", "nama": "Triceps kickback", "detail": "3x12", "alat": "Dumbbell", "done": false, "urutan": 4}, {"id": "id_1787554858704_avk9rv", "hari": "Selasa", "nama": "Dumbbell bent-over row", "detail": "3x10", "alat": "Dumbbell", "done": false, "urutan": 0}, {"id": "id_1787554858704_u18pq3", "hari": "Selasa", "nama": "Dumbbell Romanian deadlift", "detail": "3x10", "alat": "Dumbbell", "done": false, "urutan": 1}, {"id": "id_1787554858704_m0po8g", "hari": "Selasa", "nama": "Dumbbell bicep curl", "detail": "3x12", "alat": "Dumbbell", "done": false, "urutan": 2}, {"id": "id_1787554858704_hniy8i", "hari": "Selasa", "nama": "Dumbbell hammer curl", "detail": "3x12", "alat": "Dumbbell", "done": false, "urutan": 3}, {"id": "id_1787554858704_dd7w2j", "hari": "Selasa", "nama": "Superman hold", "detail": "3x20 detik", "alat": "Bodyweight", "done": false, "urutan": 4}, {"id": "id_1787554858704_s8yv25", "hari": "Rabu", "nama": "Dumbbell goblet squat", "detail": "3x12", "alat": "Dumbbell", "done": false, "urutan": 0}, {"id": "id_1787554858704_jp5skx", "hari": "Rabu", "nama": "Dumbbell lunges (per kaki)", "detail": "3x10", "alat": "Dumbbell", "done": false, "urutan": 1}, {"id": "id_1787554858704_whn16s", "hari": "Rabu", "nama": "Dumbbell calf raise", "detail": "3x15", "alat": "Dumbbell", "done": false, "urutan": 2}, {"id": "id_1787554858704_glnup2", "hari": "Rabu", "nama": "Plank di push-up bar", "detail": "3x30–40 detik", "alat": "Push-up Bar", "done": false, "urutan": 3}, {"id": "id_1787554858704_3yfkej", "hari": "Rabu", "nama": "Mountain climber di push-up bar", "detail": "3x20", "alat": "Push-up Bar", "done": false, "urutan": 4}, {"id": "id_1787554858704_0op8dm", "hari": "Kamis", "nama": "Decline push-up (kaki diangkat) di push-up bar", "detail": "3x10", "alat": "Push-up Bar", "done": false, "urutan": 0}, {"id": "id_1787554858704_tcgslk", "hari": "Kamis", "nama": "Dumbbell Arnold press", "detail": "3x10", "alat": "Dumbbell", "done": false, "urutan": 1}, {"id": "id_1787554858704_fsafa4", "hari": "Kamis", "nama": "Close-grip push-up di push-up bar", "detail": "3x10", "alat": "Push-up Bar", "done": false, "urutan": 2}, {"id": "id_1787554858704_c7g61x", "hari": "Kamis", "nama": "Dumbbell skull crusher", "detail": "3x12", "alat": "Dumbbell", "done": false, "urutan": 3}, {"id": "id_1787554858704_wtxwp1", "hari": "Kamis", "nama": "Dumbbell front raise", "detail": "3x12", "alat": "Dumbbell", "done": false, "urutan": 4}, {"id": "id_1787554858704_2bjgbv", "hari": "Jumat", "nama": "Dumbbell single-arm row (per sisi)", "detail": "3x10", "alat": "Dumbbell", "done": false, "urutan": 0}, {"id": "id_1787554858704_athl73", "hari": "Jumat", "nama": "Dumbbell deadlift", "detail": "3x10", "alat": "Dumbbell", "done": false, "urutan": 1}, {"id": "id_1787554858704_vpunwo", "hari": "Jumat", "nama": "Dumbbell concentration curl", "detail": "3x12", "alat": "Dumbbell", "done": false, "urutan": 2}, {"id": "id_1787554858704_xlui4x", "hari": "Jumat", "nama": "Dumbbell rear delt fly", "detail": "3x12", "alat": "Dumbbell", "done": false, "urutan": 3}, {"id": "id_1787554858704_rneq33", "hari": "Jumat", "nama": "Reverse plank hold", "detail": "3x20–30 detik", "alat": "Bodyweight", "done": false, "urutan": 4}, {"id": "id_1787554858704_zo1t0w", "hari": "Sabtu", "nama": "Push-up di push-up bar", "detail": "4x12", "alat": "Push-up Bar", "done": false, "urutan": 0}, {"id": "id_1787554858704_1vx1np", "hari": "Sabtu", "nama": "Dumbbell goblet squat", "detail": "4x12", "alat": "Dumbbell", "done": false, "urutan": 1}, {"id": "id_1787554858704_natq3u", "hari": "Sabtu", "nama": "Dumbbell bent-over row", "detail": "4x10", "alat": "Dumbbell", "done": false, "urutan": 2}, {"id": "id_1787554858704_fq3u09", "hari": "Sabtu", "nama": "Dumbbell shoulder press", "detail": "3x10", "alat": "Dumbbell", "done": false, "urutan": 3}, {"id": "id_1787554858704_xmdnyp", "hari": "Sabtu", "nama": "Dumbbell lunges (per kaki)", "detail": "3x10", "alat": "Dumbbell", "done": false, "urutan": 4}, {"id": "id_1787554858704_t2huvl", "hari": "Sabtu", "nama": "Dumbbell bicep curl", "detail": "3x12", "alat": "Dumbbell", "done": false, "urutan": 5}, {"id": "id_1787554858704_et2ih0", "hari": "Sabtu", "nama": "Plank di push-up bar", "detail": "3x40–50 detik", "alat": "Push-up Bar", "done": false, "urutan": 6}, {"id": "id_1787554858704_pqsd6p", "hari": "Minggu", "nama": "Stretching seluruh badan", "detail": "10–15 menit", "alat": "Bodyweight", "done": false, "urutan": 0}, {"id": "id_1787554858704_ircevr", "hari": "Minggu", "nama": "Jalan santai (opsional)", "detail": "20–30 menit", "alat": "Bodyweight", "done": false, "urutan": 1}]};
+
 
 const DEFAULT_SCHEDULE = [
   ['04:30','Sholat Subuh','Lanjut tidur lagi'],
@@ -912,11 +935,11 @@ function loadLocal(){
       saveLocal();
     }
   } else {
-    DATA.jadwal = buildDefaultJadwal();
-    DATA.meal = buildDefaultMeal().concat(buildDefaultMealWeekend());
-    DATA.stok = buildDefaultStok();
-    DATA.progress = [];
-    DATA.latihan = buildDefaultLatihan();
+    DATA.jadwal = SEED_DATA.jadwal || [];
+    DATA.meal = SEED_DATA.meal || [];
+    DATA.stok = SEED_DATA.stok || [];
+    DATA.progress = SEED_DATA.progress || [];
+    DATA.latihan = SEED_DATA.latihan || [];
     saveLocal();
   }
 }
@@ -977,6 +1000,7 @@ async function applyJadwalTemplate(sourceHari, targetHariList){
   const ok = await showConfirm(`Timpa jadwal ${targetLabel} dengan jadwal ${sourceHari} (${sourceItems.length} kegiatan)? Jadwal lama di hari tujuan akan dihapus.`);
   if(!ok) return;
 
+  const toDelete = DATA.jadwal.filter(x=>targetHariList.includes(x.hari));
   DATA.jadwal = DATA.jadwal.filter(x=>!targetHariList.includes(x.hari));
 
   const newItems = [];
@@ -989,6 +1013,15 @@ async function applyJadwalTemplate(sourceHari, targetHariList){
   saveLocal();
   renderJadwal();
   showToast(`Jadwal ${sourceHari} diterapkan ke ${targetLabel}.`);
+
+  if(scriptUrl){
+    for(const item of toDelete){ await callAPI('delete', {sheet:'Jadwal', id:item.id}); }
+    for(const item of newItems){
+      const res = await callAPI('add', {sheet:'Jadwal', item});
+      if(res && res.item){ item.id = res.item.id; }
+    }
+    saveLocal();
+  }
 }
 
 function exportBackup(){
@@ -1035,6 +1068,46 @@ async function importBackup(event){
 }
 
 function uid(){ return 'id_'+Date.now()+'_'+Math.random().toString(36).slice(2,8); }
+
+async function callAPI(action, payload={}){
+  if(!scriptUrl) return null;
+  try{
+    const res = await fetch(scriptUrl, {
+      method:'POST',
+      headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body: JSON.stringify({action, ...payload})
+    });
+    return await res.json();
+  }catch(err){
+    console.error('Sync error', err);
+    return null;
+  }
+}
+
+// Kirim SEMUA data lokal ke Google Sheets (satu arah: HP -> Sheets).
+// Tidak pernah membaca/menimpa data lokal dari Sheets, jadi jam/data
+// yang sudah benar di HP tidak akan pernah berubah gara-gara sync.
+async function pushAllToSheet(){
+  if(!scriptUrl) return;
+  for(const item of DATA.jadwal){ await callAPI('add', {sheet:'Jadwal', item}); }
+  for(const item of DATA.stok){ await callAPI('add', {sheet:'Stok', item}); }
+  for(const item of DATA.meal){ await callAPI('add', {sheet:'MealPlan', item}); }
+  for(const item of DATA.progress){ await callAPI('add', {sheet:'Progress', item}); }
+  for(const item of DATA.latihan){ await callAPI('add', {sheet:'Latihan', item}); }
+  showToast('Data terkirim ke Google Sheets.');
+}
+
+function openSettings(){
+  document.getElementById('scriptUrl').value = scriptUrl;
+  document.getElementById('settingsModal').classList.add('open');
+}
+function closeSettings(){ document.getElementById('settingsModal').classList.remove('open'); }
+async function saveScriptUrl(){
+  scriptUrl = document.getElementById('scriptUrl').value.trim();
+  localStorage.setItem('planner_script_url', scriptUrl);
+  closeSettings();
+  if(scriptUrl) await pushAllToSheet();
+}
 
 /* ---------- NOTIFIKASI ---------- */
 let notifEnabled = localStorage.getItem('planner_notif_enabled') === 'true';
@@ -1178,6 +1251,10 @@ async function addJadwal(){
   DATA.jadwal.push(item); saveLocal(); renderJadwal();
   document.getElementById('j-kegiatan').value='';
   document.getElementById('j-catatan').value='';
+  if(scriptUrl){
+    const res = await callAPI('add', {sheet:'Jadwal', item});
+    if(res && res.item) { item.id = res.item.id; saveLocal(); }
+  }
 }
 async function deleteJadwal(id){
   const item = DATA.jadwal.find(x=>x.id===id);
@@ -1185,6 +1262,7 @@ async function deleteJadwal(id){
   const ok = await showConfirm(`Hapus ${label}?`);
   if(!ok) return;
   DATA.jadwal = DATA.jadwal.filter(x=>x.id!==id); saveLocal(); renderJadwal();
+  if(scriptUrl) await callAPI('delete', {sheet:'Jadwal', id});
 }
 function renderJadwal(){
   const list = document.getElementById('jadwal-list');
@@ -1265,6 +1343,7 @@ async function saveJadwalModal(){
   item.kegiatan = kegiatan;
   item.catatan = document.getElementById('je-catatan').value.trim();
   saveLocal(); renderJadwal(); closeJadwalModal();
+  if(scriptUrl) await callAPI('update', {sheet:'Jadwal', item});
 }
 async function deleteJadwalFromModal(){
   if(!editingJadwalId) return;
@@ -1310,6 +1389,7 @@ function onJadwalDrop(e){
   dayItems.splice(toIdx,0,moved);
   dayItems.forEach((item,idx)=>{ item.urutan = idx; });
   saveLocal(); renderJadwal();
+  if(scriptUrl){ dayItems.forEach(item=>callAPI('update', {sheet:'Jadwal', item})); }
   draggedJadwalId = null;
 }
 
@@ -1326,12 +1406,17 @@ async function addStok(){
   const item = { id: uid(), nama, kategori, jumlah: Number(jumlah)||0, satuan, minimum: Number(minimum)||0, kadaluarsa, catatan };
   DATA.stok.push(item); saveLocal(); renderStok();
   ['s-nama','s-kategori','s-jumlah','s-satuan','s-minimum','s-kadaluarsa','s-catatan'].forEach(id=>document.getElementById(id).value='');
+  if(scriptUrl){
+    const res = await callAPI('add', {sheet:'Stok', item});
+    if(res && res.item){ item.id = res.item.id; saveLocal(); }
+  }
 }
 async function adjustStok(id, delta){
   const item = DATA.stok.find(x=>x.id===id);
   if(!item) return;
   item.jumlah = Math.max(0, Number(item.jumlah||0)+delta);
   saveLocal(); renderStok();
+  if(scriptUrl) await callAPI('update', {sheet:'Stok', item});
 }
 async function deleteStok(id){
   const item = DATA.stok.find(x=>x.id===id);
@@ -1339,6 +1424,7 @@ async function deleteStok(id){
   const ok = await showConfirm(`Hapus ${label} dari stok?`);
   if(!ok) return;
   DATA.stok = DATA.stok.filter(x=>x.id!==id); saveLocal(); renderStok();
+  if(scriptUrl) await callAPI('delete', {sheet:'Stok', id});
 }
 function renderBelanja(){
   const list = document.getElementById('belanja-list');
@@ -1374,6 +1460,7 @@ async function markBelanjaBought(id){
   item.jumlah = Number(item.minimum||0);
   saveLocal(); renderStok();
   showToast(`${item.nama} ditandai sudah dibeli.`);
+  if(scriptUrl) await callAPI('update', {sheet:'Stok', item});
 }
 async function markAllBelanjaBought(){
   const needed = DATA.stok.filter(item=>{
@@ -1386,6 +1473,7 @@ async function markAllBelanjaBought(){
   needed.forEach(item=>{ item.jumlah = Number(item.minimum||0); });
   saveLocal(); renderStok();
   showToast('Semua bahan ditandai sudah dibeli.');
+  if(scriptUrl){ for(const item of needed){ await callAPI('update', {sheet:'Stok', item}); } }
 }
 function trimNum(n){
   const r = Math.round(n*100)/100;
@@ -1536,449 +1624,4 @@ async function onMealDrop(e){
     return;
   }
   if(target.waktu===draggedMealSlot.waktu){ draggedMealSlot = null; return; }
-  await swapMealSlots(draggedMealSlot.hari, draggedMealSlot.waktu, target.waktu);
-  draggedMealSlot = null;
-}
-async function swapMealSlots(hari, waktuA, waktuB){
-  const idxA = DATA.meal.findIndex(m=>m.hari===hari && m.waktu===waktuA);
-  const idxB = DATA.meal.findIndex(m=>m.hari===hari && m.waktu===waktuB);
-  if(idxA===-1 && idxB===-1) return;
-  if(idxA!==-1 && idxB!==-1){
-    const a = DATA.meal[idxA], b = DATA.meal[idxB];
-    const tmp = { menu:a.menu, catatan:a.catatan, kkal:a.kkal, protein:a.protein };
-    a.menu=b.menu; a.catatan=b.catatan; a.kkal=b.kkal; a.protein=b.protein;
-    b.menu=tmp.menu; b.catatan=tmp.catatan; b.kkal=tmp.kkal; b.protein=tmp.protein;
-    saveLocal(); renderMealTable();
-  } else if(idxA!==-1){
-    DATA.meal[idxA].waktu = waktuB;
-    saveLocal(); renderMealTable();
-  } else {
-    DATA.meal[idxB].waktu = waktuA;
-    saveLocal(); renderMealTable();
-  }
-}
-
-const KKAL_TARGET = [2400, 2600];
-const PROTEIN_TARGET = [100, 120];
-function renderRingkasan(){
-  const strip = document.getElementById('ringkasan-strip');
-  if(!strip) return;
-  strip.innerHTML = '';
-  HARI_LIST.forEach(hari=>{
-    const items = DATA.meal.filter(m=>m.hari===hari);
-    const totalKkal = items.reduce((s,m)=>s+(Number(m.kkal)||0),0);
-    const totalProtein = items.reduce((s,m)=>s+(Number(m.protein)||0),0);
-    let status='under', label='Kurang';
-    if(totalKkal===0 && totalProtein===0){ status='under'; label='Belum diisi'; }
-    else if(totalKkal >= KKAL_TARGET[0] && totalKkal <= KKAL_TARGET[1]){ status='ok'; label='Sesuai target'; }
-    else if(totalKkal > KKAL_TARGET[1]){ status='over'; label='Lebih target'; }
-    else { status='under'; label='Kurang target'; }
-    const card = document.createElement('div');
-    card.className = 'ringkasan-card '+status;
-    card.innerHTML = `
-      <div class="hari">${hari}</div>
-      <div class="kkal">${totalKkal} kkal</div>
-      <div class="protein">${totalProtein} g protein</div>
-      <div class="status">${label}</div>
-    `;
-    strip.appendChild(card);
-  });
-}
-function openMealModal(hari, waktu){
-  const existing = DATA.meal.find(m=>m.hari===hari && m.waktu===waktu);
-  editingMealCell = { hari, waktu, existing };
-  document.getElementById('mealModalTitle').textContent = `${waktu} — ${hari}`;
-  document.getElementById('m-menu').value = existing ? existing.menu : '';
-  document.getElementById('m-kkal').value = existing && existing.kkal ? existing.kkal : '';
-  document.getElementById('m-protein').value = existing && existing.protein ? existing.protein : '';
-  document.getElementById('m-catatan').value = existing ? (existing.catatan||'') : '';
-  document.getElementById('m-delete-btn').style.display = existing ? 'inline-block' : 'none';
-  document.getElementById('mealModal').classList.add('open');
-}
-function closeMealModal(){ document.getElementById('mealModal').classList.remove('open'); editingMealCell=null; }
-async function saveMealCell(){
-  if(!editingMealCell) return;
-  const menu = document.getElementById('m-menu').value.trim();
-  const kkal = Number(document.getElementById('m-kkal').value)||0;
-  const protein = Number(document.getElementById('m-protein').value)||0;
-  const catatan = document.getElementById('m-catatan').value.trim();
-  const { hari, waktu, existing } = editingMealCell;
-  if(!menu){ closeMealModal(); return; }
-  if(existing){
-    existing.menu = menu; existing.catatan = catatan; existing.kkal = kkal; existing.protein = protein;
-    saveLocal(); renderMealTable(); closeMealModal();
-  } else {
-    const item = { id: uid(), hari, waktu, menu, catatan, kkal, protein };
-    DATA.meal.push(item);
-    saveLocal(); renderMealTable(); closeMealModal();
-  }
-}
-async function deleteMealCell(){
-  if(!editingMealCell || !editingMealCell.existing) return;
-  const { hari, waktu } = editingMealCell;
-  const ok = await showConfirm(`Hapus menu ${waktu} — ${hari}?`);
-  if(!ok) return;
-  const id = editingMealCell.existing.id;
-  DATA.meal = DATA.meal.filter(x=>x.id!==id);
-  saveLocal(); renderMealTable(); closeMealModal();
-}
-
-function escapeHtml(str){
-  const div = document.createElement('div');
-  div.textContent = str==null?'':String(str);
-  return div.innerHTML;
-}
-
-/* ---------- DASHBOARD / HARI INI ---------- */
-function getTodayHari(){
-  const map = ['Minggu','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu'];
-  return map[new Date().getDay()];
-}
-function renderDashboard(){
-  const dayEl = document.getElementById('dash-day');
-  if(!dayEl) return; // dashboard not in DOM yet
-
-  const hari = getTodayHari();
-  const now = new Date();
-  const tanggalStr = now.toLocaleDateString('id-ID', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
-  const jamStr = now.toTimeString().slice(0,5);
-  dayEl.textContent = `Hari ini — ${hari}`;
-  document.getElementById('dash-date').textContent = `${tanggalStr} · ${jamStr}`;
-
-  // Belanja alert
-  const alertBox = document.getElementById('dash-belanja-alert');
-  const needed = DATA.stok.filter(item=>{
-    const min = Number(item.minimum||0);
-    return min > 0 && Number(item.jumlah||0) < min;
-  });
-  if(needed.length>0){
-    alertBox.style.display = 'block';
-    alertBox.innerHTML = `
-      <div class="belanja-head"><h3>${needed.length} bahan perlu dibeli</h3></div>
-      <div style="font-size:0.82rem;color:var(--muted);">${needed.slice(0,4).map(i=>escapeHtml(i.nama)).join(', ')}${needed.length>4?`, +${needed.length-4} lagi`:''} — cek tab Stok Bahan.</div>
-    `;
-  } else {
-    alertBox.style.display = 'none';
-  }
-
-  // Kadaluarsa alert
-  const expiryBox = document.getElementById('dash-expiry-alert');
-  const expiring = DATA.stok
-    .map(item=>({ item, exp: getExpiryStatus(item.kadaluarsa) }))
-    .filter(x=>x.exp && (x.exp.status==='expired' || x.exp.status==='soon'))
-    .sort((a,b)=> a.exp.daysLeft - b.exp.daysLeft);
-  if(expiring.length>0){
-    const expiredCount = expiring.filter(x=>x.exp.status==='expired').length;
-    const soonCount = expiring.length - expiredCount;
-    const titleParts = [];
-    if(expiredCount>0) titleParts.push(`${expiredCount} sudah kadaluarsa`);
-    if(soonCount>0) titleParts.push(`${soonCount} segera kadaluarsa`);
-    expiryBox.style.display = 'block';
-    expiryBox.innerHTML = `
-      <div class="belanja-head"><h3 style="display:flex;align-items:center;gap:8px;">${titleParts.join(' · ')}</h3></div>
-      <div style="font-size:0.82rem;color:var(--muted);">
-        ${expiring.slice(0,4).map(x=>{
-          const label = x.exp.status==='expired' ? `lewat ${Math.abs(x.exp.daysLeft)} hari` : (x.exp.daysLeft===0?'hari ini':`${x.exp.daysLeft} hari lagi`);
-          return `${escapeHtml(x.item.nama)} (${label})`;
-        }).join(', ')}${expiring.length>4?`, +${expiring.length-4} lagi`:''} — cek tab Stok Bahan.
-      </div>
-    `;
-  } else {
-    expiryBox.style.display = 'none';
-  }
-
-  // Jadwal hari ini
-  const jadwalEl = document.getElementById('dash-jadwal');
-  const jadwalToday = DATA.jadwal.filter(x=>x.hari===hari).sort((a,b)=>{
-    const ja = a.jam||'99:99', jb = b.jam||'99:99';
-    if(ja !== jb) return ja.localeCompare(jb);
-    return (a.urutan??0)-(b.urutan??0);
-  });
-  if(jadwalToday.length===0){
-    jadwalEl.innerHTML = '<div class="empty">Belum ada jadwal untuk hari ini.</div>';
-  } else {
-    // find current activity: last item whose jam <= now
-    let currentId = null;
-    let bestJam = null;
-    jadwalToday.forEach(item=>{
-      if(item.jam && item.jam<=jamStr && (bestJam===null || item.jam>bestJam)){
-        bestJam = item.jam;
-        currentId = item.id;
-      }
-    });
-    jadwalEl.innerHTML = jadwalToday.map(item=>`
-      <div class="sched-item" style="${item.id===currentId?`border-left-color:var(--accent);background:var(--paper);`:''}">
-        <div class="jam">${item.jam||'--:--'}</div>
-        <div class="body">
-          <div class="kegiatan">${escapeHtml(item.kegiatan)}${item.id===currentId?' <span style="color:var(--accent);font-family:\'Space Mono\',monospace;font-size:0.65rem;text-transform:uppercase;">· sekarang</span>':''}</div>
-          ${item.catatan?`<div class="catatan">${escapeHtml(item.catatan)}</div>`:''}
-        </div>
-      </div>
-    `).join('');
-  }
-
-  // Latihan hari ini
-  const latihanEl = document.getElementById('dash-latihan');
-  const latihanToday = DATA.latihan.filter(x=>x.hari===hari).sort((a,b)=>(a.urutan??0)-(b.urutan??0));
-  if(latihanToday.length===0){
-    latihanEl.innerHTML = '<div class="empty">Tidak ada latihan terjadwal hari ini.</div>';
-  } else {
-    const doneCount = latihanToday.filter(i=>i.done).length;
-    latihanEl.innerHTML = `<div style="padding:9px 10px 0;font-family:'Space Mono',monospace;font-size:0.7rem;color:var(--muted);">${doneCount}/${latihanToday.length} selesai</div>` +
-      latihanToday.map(item=>`
-        <div class="latihan-item${item.done?' done':''}">
-          <div class="check${item.done?' checked':''}" onclick="toggleLatihan('${item.id}')">${item.done?'✓':''}</div>
-          <div class="body">
-            <div class="nama-latihan">${escapeHtml(item.nama)}${item.alat?`<span class="alat-tag">${escapeHtml(item.alat)}</span>`:''}</div>
-            ${item.detail?`<div class="detail">${escapeHtml(item.detail)}</div>`:''}
-          </div>
-        </div>
-      `).join('');
-  }
-
-  // Menu hari ini
-  const mealEl = document.getElementById('dash-meal');
-  const mealToday = WAKTU_LIST.map(waktu=>DATA.meal.find(m=>m.hari===hari && m.waktu===waktu)).filter(Boolean).filter(m=>m.menu);
-  if(mealToday.length===0){
-    mealEl.innerHTML = '<div class="empty">Belum ada menu untuk hari ini.</div>';
-  } else {
-    mealEl.innerHTML = mealToday.map(item=>`
-      <div class="sched-item">
-        <div class="jam" style="min-width:90px;font-size:0.68rem;">${escapeHtml(item.waktu)}</div>
-        <div class="body">
-          <div class="kegiatan">${escapeHtml(item.menu)}</div>
-          ${item.catatan?`<div class="catatan">${escapeHtml(item.catatan)}</div>`:''}
-        </div>
-      </div>
-    `).join('');
-  }
-
-  // Berat terakhir
-  const progEl = document.getElementById('dash-progress');
-  const entries = [...DATA.progress].filter(e=>e.tanggal && e.berat).sort((a,b)=>a.tanggal.localeCompare(b.tanggal));
-  if(entries.length===0){
-    progEl.innerHTML = '<div class="empty">Belum ada catatan berat badan.</div>';
-  } else {
-    const last = entries[entries.length-1];
-    progEl.innerHTML = `
-      <div class="progress-stat">
-        <div class="label">Berat terakhir</div>
-        <div class="value">${last.berat} kg</div>
-        <div class="sub">${last.tanggal}</div>
-      </div>
-    `;
-  }
-}
-
-function renderAll(){
-  renderJadwal();
-  renderStok();
-  renderMealTable();
-  renderProgress();
-  renderLatihan();
-}
-
-/* ---------- LATIHAN ---------- */
-async function addLatihan(){
-  const hari = document.getElementById('l-hari').value;
-  const nama = document.getElementById('l-nama').value.trim();
-  const detail = document.getElementById('l-detail').value.trim();
-  const alat = document.getElementById('l-alat').value;
-  if(!nama) return;
-  const urutan = DATA.latihan.filter(x=>x.hari===hari).length;
-  const item = { id: uid(), hari, nama, detail, alat, done:false, urutan };
-  DATA.latihan.push(item); saveLocal(); renderLatihan();
-  document.getElementById('l-nama').value='';
-  document.getElementById('l-detail').value='';
-}
-async function deleteLatihan(id){
-  const item = DATA.latihan.find(x=>x.id===id);
-  const label = item ? `"${item.nama}"` : 'latihan ini';
-  const ok = await showConfirm(`Hapus ${label}?`);
-  if(!ok) return;
-  DATA.latihan = DATA.latihan.filter(x=>x.id!==id); saveLocal(); renderLatihan();
-}
-async function toggleLatihan(id){
-  const item = DATA.latihan.find(x=>x.id===id);
-  if(!item) return;
-  item.done = !item.done;
-  saveLocal(); renderLatihan();
-}
-function renderLatihan(){
-  const list = document.getElementById('latihan-list');
-  if(!list) return;
-  list.innerHTML='';
-  const byDay = {};
-  HARI_LIST.forEach(h=>byDay[h]=[]);
-  DATA.latihan.forEach(item=>{ if(byDay[item.hari]) byDay[item.hari].push(item); });
-  let any=false;
-  HARI_LIST.forEach(hari=>{
-    const items = byDay[hari].sort((a,b)=>(a.urutan??0)-(b.urutan??0));
-    if(items.length===0) return;
-    any=true;
-    const doneCount = items.filter(i=>i.done).length;
-    const group = document.createElement('div');
-    group.className='day-group';
-    const rot = LATIHAN_ROTATION[hari];
-    group.innerHTML = `<h3>${hari}${rot?` — ${escapeHtml(rot.label)}`:''} <span style="opacity:0.55;">(${doneCount}/${items.length})</span></h3>`;
-    const card = document.createElement('div');
-    card.className='card';
-    items.forEach(item=>{
-      const row = document.createElement('div');
-      row.className='latihan-item'+(item.done?' done':'');
-      row.innerHTML = `
-        <div class="check${item.done?' checked':''}" onclick="toggleLatihan('${item.id}')">${item.done?'✓':''}</div>
-        <div class="body">
-          <div class="nama-latihan">${escapeHtml(item.nama)}${item.alat?`<span class="alat-tag">${escapeHtml(item.alat)}</span>`:''}</div>
-          ${item.detail?`<div class="detail">${escapeHtml(item.detail)}</div>`:''}
-        </div>
-        <button class="btn danger" onclick="deleteLatihan('${item.id}')">Hapus</button>
-      `;
-      card.appendChild(row);
-    });
-    group.appendChild(card);
-    list.appendChild(group);
-  });
-  if(!any) list.innerHTML = '<div class="empty">Belum ada latihan. Tambahkan gerakan pertamamu di atas.</div>';
-  renderDashboard();
-}
-
-/* ---------- PROGRESS (BERAT BADAN) ---------- */
-async function addProgress(){
-  const tanggal = document.getElementById('p-tanggal').value;
-  const berat = Number(document.getElementById('p-berat').value);
-  const catatan = document.getElementById('p-catatan').value.trim();
-  if(!tanggal || !berat) return;
-  const item = { id: uid(), tanggal, berat, catatan };
-  DATA.progress.push(item); saveLocal(); renderProgress();
-  document.getElementById('p-tanggal').value='';
-  document.getElementById('p-berat').value='';
-  document.getElementById('p-catatan').value='';
-}
-async function deleteProgress(id){
-  const ok = await showConfirm('Hapus catatan berat badan ini?');
-  if(!ok) return;
-  DATA.progress = DATA.progress.filter(x=>x.id!==id); saveLocal(); renderProgress();
-}
-function renderProgress(){
-  const summary = document.getElementById('progress-summary');
-  const list = document.getElementById('progress-list');
-  const chart = document.getElementById('progress-chart');
-  if(!summary || !list || !chart) return;
-
-  const entries = [...DATA.progress].filter(e=>e.tanggal && e.berat).sort((a,b)=>a.tanggal.localeCompare(b.tanggal));
-
-  if(entries.length===0){
-    summary.innerHTML = '';
-    chart.innerHTML = '<div class="empty">Belum ada catatan. Tambahkan berat badan pertamamu di atas.</div>';
-    list.innerHTML = '';
-    renderDashboard();
-    return;
-  }
-
-  const first = entries[0];
-  const last = entries[entries.length-1];
-  const totalChange = last.berat - first.berat;
-  const days = Math.max(1, (new Date(last.tanggal) - new Date(first.tanggal))/86400000);
-  const weeks = days/7;
-  const perWeek = weeks>0 ? totalChange/weeks : 0;
-
-  let rateStatus='under', rateLabel='Di bawah target';
-  if(perWeek >= 0.2 && perWeek <= 0.4){ rateStatus='ok'; rateLabel='Sesuai target'; }
-  else if(perWeek > 0.4){ rateStatus='over'; rateLabel='Di atas target'; }
-  else { rateStatus='under'; rateLabel='Di bawah target'; }
-
-  summary.innerHTML = `
-    <div class="progress-stat">
-      <div class="label">Berat terakhir</div>
-      <div class="value">${last.berat} kg</div>
-      <div class="sub">${last.tanggal}</div>
-    </div>
-    <div class="progress-stat">
-      <div class="label">Total perubahan</div>
-      <div class="value">${totalChange>=0?'+':''}${trimNum(totalChange)} kg</div>
-      <div class="sub">sejak ${first.tanggal}</div>
-    </div>
-    <div class="progress-stat ${rateStatus}">
-      <div class="label">Laju per minggu</div>
-      <div class="value">${perWeek>=0?'+':''}${trimNum(perWeek)} kg</div>
-      <div class="sub">${rateLabel} (0,2–0,4 kg/minggu)</div>
-    </div>
-  `;
-
-  // Chart (simple SVG line)
-  const W = 600, H = 180, PAD = 30;
-  const values = entries.map(e=>e.berat);
-  const minV = Math.min(...values), maxV = Math.max(...values);
-  const range = (maxV-minV) || 1;
-  const stepX = entries.length>1 ? (W-PAD*2)/(entries.length-1) : 0;
-  const points = entries.map((e,i)=>{
-    const x = PAD + i*stepX;
-    const y = H-PAD - ((e.berat-minV)/range)*(H-PAD*2);
-    return {x,y,berat:e.berat,tanggal:e.tanggal};
-  });
-  const pathD = points.map((p,i)=>(i===0?'M':'L')+p.x.toFixed(1)+','+p.y.toFixed(1)).join(' ');
-  const dots = points.map(p=>`<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="3.5" fill="#FF4B26"><title>${p.tanggal}: ${p.berat} kg</title></circle>`).join('');
-  chart.innerHTML = `
-    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">
-      <path d="${pathD}" fill="none" stroke="#15150F" stroke-width="2"/>
-      ${dots}
-    </svg>
-  `;
-
-  // List (newest first)
-  list.innerHTML = '';
-  const rev = [...entries].reverse();
-  rev.forEach((item,idx)=>{
-    const prevIdx = entries.indexOf(item)-1;
-    const prev = prevIdx>=0 ? entries[prevIdx] : null;
-    let deltaHtml = '';
-    if(prev){
-      const d = item.berat - prev.berat;
-      const cls = d>0?'up':(d<0?'down':'');
-      deltaHtml = `<span class="delta ${cls}">${d>=0?'+':''}${trimNum(d)} kg</span>`;
-    }
-    const row = document.createElement('div');
-    row.className = 'progress-item';
-    row.innerHTML = `
-      <div class="tgl">${item.tanggal}</div>
-      <div class="bb">${item.berat} kg${item.catatan?` <span style="color:var(--muted);font-weight:400;font-size:0.8rem;">— ${escapeHtml(item.catatan)}</span>`:''}</div>
-      ${deltaHtml}
-      <button class="btn danger" onclick="deleteProgress('${item.id}')">Hapus</button>
-    `;
-    list.appendChild(row);
-  });
-  renderDashboard();
-}
-
-function resetLatihanDailyIfNeeded(){
-  const todayStr = new Date().toISOString().slice(0,10);
-  const lastReset = localStorage.getItem('planner_latihan_reset_date');
-  if(lastReset === todayStr) return; // sudah pernah direset hari ini
-  let changed = false;
-  (DATA.latihan||[]).forEach(item=>{
-    if(item.done){ item.done = false; changed = true; }
-  });
-  localStorage.setItem('planner_latihan_reset_date', todayStr);
-  if(changed){
-    saveLocal();
-  }
-}
-
-/* ---------- INIT ---------- */
-loadLocal();
-repairJadwalJam();
-resetLatihanDailyIfNeeded();
-renderAll();
-updateNotifBtn();
-if(notifEnabled && 'Notification' in window && Notification.permission==='granted'){
-  startNotifChecker();
-} else if(notifEnabled && 'Notification' in window && Notification.permission!=='granted'){
-  // izin dicabut dari luar app — matikan biar tombol nggak nyangkut di status aktif
-  notifEnabled = false;
-  localStorage.setItem('planner_notif_enabled','false');
-  updateNotifBtn();
-}
-</script>
-</body>
-</html>
+  await swapMealSlots(draggedMeal
