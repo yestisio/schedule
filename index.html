@@ -381,7 +381,6 @@
       <button onclick="exportBackup()">⬇️ Backup</button>
       <button onclick="document.getElementById('restoreFile').click()">⬆️ Restore</button>
       <input type="file" id="restoreFile" accept="application/json" style="display:none;" onchange="importBackup(event)">
-      <button onclick="openSettings()" title="Setelan Google Sheets">⚙️</button>
     </div>
   </header>
 
@@ -459,6 +458,14 @@
         <input type="text" id="j-catatan" placeholder="opsional">
       </div>
       <button class="btn" onclick="addJadwal()">+ Tambah</button>
+    </div>
+    <div class="add-form" style="background:var(--paper-2);">
+      <div class="field">
+        <label>Salin jadwal 1 hari ke hari lain</label>
+        <div style="font-size:0.78rem;color:var(--muted);line-height:1.5;">Ini akan MENIMPA seluruh jadwal di hari tujuan dengan jadwal hari sumber.</div>
+      </div>
+      <button class="btn ghost" onclick="applyJadwalTemplate('Senin', ['Selasa','Rabu','Kamis','Jumat'])">Senin → Selasa–Jumat</button>
+      <button class="btn ghost" onclick="applyJadwalTemplate('Sabtu', ['Minggu'])">Sabtu → Minggu</button>
     </div>
     <p style="font-size:0.78rem;color:var(--muted);margin-top:-12px;margin-bottom:14px;">Tarik <span style="letter-spacing:-1px;">⋮⋮</span> untuk geser urutan dalam satu hari.</p>
     <div id="jadwal-list"></div>
@@ -606,30 +613,11 @@
   </div>
 </div>
 
-<!-- Modal for settings -->
-<div class="modal-bg" id="settingsModal">
-  <div class="modal" style="max-width:460px;">
-    <h3>Simpan otomatis ke Google Sheets</h3>
-    <div class="settings-box" style="border:none;padding:0;">
-      <p>Deploy skrip Apps Script (file <b>Code.gs</b> yang disertakan) sebagai Web App, lalu tempel URL-nya di sini. Setiap kali kamu tambah/ubah/hapus data, otomatis terkirim ke Google Sheets kamu. Data utama tetap tersimpan di HP ini — Sheets cuma jadi cadangan, jadi datamu tidak akan pernah ketimpa isi dari Sheets.</p>
-      <div class="field">
-        <label>URL Web App</label>
-        <input type="text" id="scriptUrl" placeholder="https://script.google.com/macros/s/.../exec">
-      </div>
-    </div>
-    <div class="modal-actions">
-      <button class="btn ghost" onclick="closeSettings()">Tutup</button>
-      <button class="btn" onclick="saveScriptUrl()">Simpan</button>
-    </div>
-  </div>
-</div>
-
 <script>
 const HARI_LIST = ['Senin','Selasa','Rabu','Kamis','Jumat','Sabtu','Minggu'];
 const WAKTU_LIST = ['Sarapan','Makan Siang','Camilan Sore','Makan Malam','Camilan Malam'];
 
 let DATA = { jadwal: [], stok: [], meal: [], progress: [], latihan: [] };
-let scriptUrl = localStorage.getItem('planner_script_url') || 'https://script.google.com/macros/s/AKfycbyu_GNLHwTb3KRjjyxFoKW2D_wqonQzzBHo3SgH7ZX6XhaJeaQPlqXxTQwBMplEMbJf/exec';
 let editingMealCell = null; // {hari, waktu, existing}
 
 const DEFAULT_SCHEDULE = [
@@ -970,6 +958,39 @@ function repairJadwalJam(){
   return changed;
 }
 
+/* ---------- SALIN JADWAL 1 HARI KE HARI LAIN ---------- */
+// Menimpa jadwal di setiap hari tujuan dengan salinan jadwal hari sumber
+// (jam, kegiatan, catatan, urutan sama — id baru per item, hari diganti).
+async function applyJadwalTemplate(sourceHari, targetHariList){
+  const sourceItems = DATA.jadwal
+    .filter(x=>x.hari===sourceHari)
+    .sort((a,b)=>{
+      const ja = a.jam||'99:99', jb = b.jam||'99:99';
+      if(ja !== jb) return ja.localeCompare(jb);
+      return (a.urutan??0)-(b.urutan??0);
+    });
+  if(sourceItems.length===0){
+    showToast(`Belum ada jadwal di hari ${sourceHari} untuk disalin.`);
+    return;
+  }
+  const targetLabel = targetHariList.join(', ');
+  const ok = await showConfirm(`Timpa jadwal ${targetLabel} dengan jadwal ${sourceHari} (${sourceItems.length} kegiatan)? Jadwal lama di hari tujuan akan dihapus.`);
+  if(!ok) return;
+
+  DATA.jadwal = DATA.jadwal.filter(x=>!targetHariList.includes(x.hari));
+
+  const newItems = [];
+  targetHariList.forEach(hari=>{
+    sourceItems.forEach((src,idx)=>{
+      newItems.push({ id: uid(), hari, jam: src.jam, kegiatan: src.kegiatan, catatan: src.catatan, urutan: idx });
+    });
+  });
+  DATA.jadwal = DATA.jadwal.concat(newItems);
+  saveLocal();
+  renderJadwal();
+  showToast(`Jadwal ${sourceHari} diterapkan ke ${targetLabel}.`);
+}
+
 function exportBackup(){
   const blob = new Blob([JSON.stringify(DATA, null, 2)], {type:'application/json'});
   const url = URL.createObjectURL(blob);
@@ -1014,35 +1035,6 @@ async function importBackup(event){
 }
 
 function uid(){ return 'id_'+Date.now()+'_'+Math.random().toString(36).slice(2,8); }
-
-async function callAPI(action, payload={}){
-  if(!scriptUrl) return null;
-  try{
-    const res = await fetch(scriptUrl, {
-      method:'POST',
-      headers:{'Content-Type':'text/plain;charset=utf-8'},
-      body: JSON.stringify({action, ...payload})
-    });
-    return await res.json();
-  }catch(err){
-    console.error('Sync error', err);
-    return null;
-  }
-}
-
-// Kirim SEMUA data lokal ke Google Sheets (satu arah: HP -> Sheets).
-// Tidak pernah membaca/menimpa data lokal dari Sheets, jadi jam/data
-// yang sudah benar di HP tidak akan pernah berubah gara-gara sync.
-async function pushAllToSheet(){
-  if(!scriptUrl) return;
-  for(const item of DATA.jadwal){ await callAPI('add', {sheet:'Jadwal', item}); }
-  for(const item of DATA.stok){ await callAPI('add', {sheet:'Stok', item}); }
-  for(const item of DATA.meal){ await callAPI('add', {sheet:'MealPlan', item}); }
-  for(const item of DATA.progress){ await callAPI('add', {sheet:'Progress', item}); }
-  for(const item of DATA.latihan){ await callAPI('add', {sheet:'Latihan', item}); }
-  showToast('Data terkirim ke Google Sheets.');
-}
-
 
 /* ---------- NOTIFIKASI ---------- */
 let notifEnabled = localStorage.getItem('planner_notif_enabled') === 'true';
@@ -1134,18 +1126,6 @@ function stopNotifChecker(){
   if(notifInterval){ clearInterval(notifInterval); notifInterval = null; }
 }
 
-function openSettings(){
-  document.getElementById('scriptUrl').value = scriptUrl;
-  document.getElementById('settingsModal').classList.add('open');
-}
-function closeSettings(){ document.getElementById('settingsModal').classList.remove('open'); }
-async function saveScriptUrl(){
-  scriptUrl = document.getElementById('scriptUrl').value.trim();
-  localStorage.setItem('planner_script_url', scriptUrl);
-  closeSettings();
-  if(scriptUrl) await pushAllToSheet();
-}
-
 function switchTab(name){
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active', t.dataset.tab===name));
   document.querySelectorAll('.panel').forEach(p=>p.classList.toggle('active', p.id==='panel-'+name));
@@ -1198,10 +1178,6 @@ async function addJadwal(){
   DATA.jadwal.push(item); saveLocal(); renderJadwal();
   document.getElementById('j-kegiatan').value='';
   document.getElementById('j-catatan').value='';
-  if(scriptUrl){
-    const res = await callAPI('add', {sheet:'Jadwal', item});
-    if(res && res.item) { item.id = res.item.id; saveLocal(); }
-  }
 }
 async function deleteJadwal(id){
   const item = DATA.jadwal.find(x=>x.id===id);
@@ -1209,7 +1185,6 @@ async function deleteJadwal(id){
   const ok = await showConfirm(`Hapus ${label}?`);
   if(!ok) return;
   DATA.jadwal = DATA.jadwal.filter(x=>x.id!==id); saveLocal(); renderJadwal();
-  if(scriptUrl) await callAPI('delete', {sheet:'Jadwal', id});
 }
 function renderJadwal(){
   const list = document.getElementById('jadwal-list');
@@ -1290,7 +1265,6 @@ async function saveJadwalModal(){
   item.kegiatan = kegiatan;
   item.catatan = document.getElementById('je-catatan').value.trim();
   saveLocal(); renderJadwal(); closeJadwalModal();
-  if(scriptUrl) await callAPI('update', {sheet:'Jadwal', item});
 }
 async function deleteJadwalFromModal(){
   if(!editingJadwalId) return;
@@ -1336,7 +1310,6 @@ function onJadwalDrop(e){
   dayItems.splice(toIdx,0,moved);
   dayItems.forEach((item,idx)=>{ item.urutan = idx; });
   saveLocal(); renderJadwal();
-  if(scriptUrl){ dayItems.forEach(item=>callAPI('update', {sheet:'Jadwal', item})); }
   draggedJadwalId = null;
 }
 
@@ -1353,17 +1326,12 @@ async function addStok(){
   const item = { id: uid(), nama, kategori, jumlah: Number(jumlah)||0, satuan, minimum: Number(minimum)||0, kadaluarsa, catatan };
   DATA.stok.push(item); saveLocal(); renderStok();
   ['s-nama','s-kategori','s-jumlah','s-satuan','s-minimum','s-kadaluarsa','s-catatan'].forEach(id=>document.getElementById(id).value='');
-  if(scriptUrl){
-    const res = await callAPI('add', {sheet:'Stok', item});
-    if(res && res.item){ item.id = res.item.id; saveLocal(); }
-  }
 }
 async function adjustStok(id, delta){
   const item = DATA.stok.find(x=>x.id===id);
   if(!item) return;
   item.jumlah = Math.max(0, Number(item.jumlah||0)+delta);
   saveLocal(); renderStok();
-  if(scriptUrl) await callAPI('update', {sheet:'Stok', item});
 }
 async function deleteStok(id){
   const item = DATA.stok.find(x=>x.id===id);
@@ -1371,7 +1339,6 @@ async function deleteStok(id){
   const ok = await showConfirm(`Hapus ${label} dari stok?`);
   if(!ok) return;
   DATA.stok = DATA.stok.filter(x=>x.id!==id); saveLocal(); renderStok();
-  if(scriptUrl) await callAPI('delete', {sheet:'Stok', id});
 }
 function renderBelanja(){
   const list = document.getElementById('belanja-list');
@@ -1407,7 +1374,6 @@ async function markBelanjaBought(id){
   item.jumlah = Number(item.minimum||0);
   saveLocal(); renderStok();
   showToast(`${item.nama} ditandai sudah dibeli.`);
-  if(scriptUrl) await callAPI('update', {sheet:'Stok', item});
 }
 async function markAllBelanjaBought(){
   const needed = DATA.stok.filter(item=>{
@@ -1420,7 +1386,6 @@ async function markAllBelanjaBought(){
   needed.forEach(item=>{ item.jumlah = Number(item.minimum||0); });
   saveLocal(); renderStok();
   showToast('Semua bahan ditandai sudah dibeli.');
-  if(scriptUrl){ for(const item of needed){ await callAPI('update', {sheet:'Stok', item}); } }
 }
 function trimNum(n){
   const r = Math.round(n*100)/100;
@@ -1584,15 +1549,12 @@ async function swapMealSlots(hari, waktuA, waktuB){
     a.menu=b.menu; a.catatan=b.catatan; a.kkal=b.kkal; a.protein=b.protein;
     b.menu=tmp.menu; b.catatan=tmp.catatan; b.kkal=tmp.kkal; b.protein=tmp.protein;
     saveLocal(); renderMealTable();
-    if(scriptUrl){ await callAPI('update', {sheet:'MealPlan', item:a}); await callAPI('update', {sheet:'MealPlan', item:b}); }
   } else if(idxA!==-1){
     DATA.meal[idxA].waktu = waktuB;
     saveLocal(); renderMealTable();
-    if(scriptUrl) await callAPI('update', {sheet:'MealPlan', item: DATA.meal[idxA]});
   } else {
     DATA.meal[idxB].waktu = waktuA;
     saveLocal(); renderMealTable();
-    if(scriptUrl) await callAPI('update', {sheet:'MealPlan', item: DATA.meal[idxB]});
   }
 }
 
@@ -1645,15 +1607,10 @@ async function saveMealCell(){
   if(existing){
     existing.menu = menu; existing.catatan = catatan; existing.kkal = kkal; existing.protein = protein;
     saveLocal(); renderMealTable(); closeMealModal();
-    if(scriptUrl) await callAPI('update', {sheet:'MealPlan', item: existing});
   } else {
     const item = { id: uid(), hari, waktu, menu, catatan, kkal, protein };
     DATA.meal.push(item);
     saveLocal(); renderMealTable(); closeMealModal();
-    if(scriptUrl){
-      const res = await callAPI('add', {sheet:'MealPlan', item});
-      if(res && res.item){ item.id = res.item.id; saveLocal(); }
-    }
   }
 }
 async function deleteMealCell(){
@@ -1664,7 +1621,6 @@ async function deleteMealCell(){
   const id = editingMealCell.existing.id;
   DATA.meal = DATA.meal.filter(x=>x.id!==id);
   saveLocal(); renderMealTable(); closeMealModal();
-  if(scriptUrl) await callAPI('delete', {sheet:'MealPlan', id});
 }
 
 function escapeHtml(str){
@@ -1834,10 +1790,6 @@ async function addLatihan(){
   DATA.latihan.push(item); saveLocal(); renderLatihan();
   document.getElementById('l-nama').value='';
   document.getElementById('l-detail').value='';
-  if(scriptUrl){
-    const res = await callAPI('add', {sheet:'Latihan', item});
-    if(res && res.item){ item.id = res.item.id; saveLocal(); }
-  }
 }
 async function deleteLatihan(id){
   const item = DATA.latihan.find(x=>x.id===id);
@@ -1845,14 +1797,12 @@ async function deleteLatihan(id){
   const ok = await showConfirm(`Hapus ${label}?`);
   if(!ok) return;
   DATA.latihan = DATA.latihan.filter(x=>x.id!==id); saveLocal(); renderLatihan();
-  if(scriptUrl) await callAPI('delete', {sheet:'Latihan', id});
 }
 async function toggleLatihan(id){
   const item = DATA.latihan.find(x=>x.id===id);
   if(!item) return;
   item.done = !item.done;
   saveLocal(); renderLatihan();
-  if(scriptUrl) await callAPI('update', {sheet:'Latihan', item});
 }
 function renderLatihan(){
   const list = document.getElementById('latihan-list');
@@ -1904,16 +1854,11 @@ async function addProgress(){
   document.getElementById('p-tanggal').value='';
   document.getElementById('p-berat').value='';
   document.getElementById('p-catatan').value='';
-  if(scriptUrl){
-    const res = await callAPI('add', {sheet:'Progress', item});
-    if(res && res.item){ item.id = res.item.id; saveLocal(); }
-  }
 }
 async function deleteProgress(id){
   const ok = await showConfirm('Hapus catatan berat badan ini?');
   if(!ok) return;
   DATA.progress = DATA.progress.filter(x=>x.id!==id); saveLocal(); renderProgress();
-  if(scriptUrl) await callAPI('delete', {sheet:'Progress', id});
 }
 function renderProgress(){
   const summary = document.getElementById('progress-summary');
@@ -2017,7 +1962,6 @@ function resetLatihanDailyIfNeeded(){
   localStorage.setItem('planner_latihan_reset_date', todayStr);
   if(changed){
     saveLocal();
-    if(scriptUrl){ DATA.latihan.forEach(item=>callAPI('update', {sheet:'Latihan', item})); }
   }
 }
 
